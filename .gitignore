@@ -1,0 +1,10 @@
+venv/
+__pycache__/
+.env
+node_modules/
+models/
+outputs/
+optuna.db
+mlflow.db
+mlruns/
+.DS_Store
