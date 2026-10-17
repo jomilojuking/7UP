@@ -1,0 +1,5 @@
+
+
+export default function App() {
+  return <h1 className="p-6 text-3xl font-bold text-indigo-600">HFAIO works</h1>;
+}
