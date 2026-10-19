@@ -40,7 +40,63 @@ function storeSaved(list: Saved[]) {
 }
 
 
-const NAMES = ["accuracy", "precision", "recall", "f1", "loss"];
+const COLS = [
+  { key: "accuracy", label: "Accuracy" },
+  { key: "precision", label: "Precision" },
+  { key: "recall", label: "Recall" },
+  { key: "f1", label: "F1" },
+  { key: "loss", label: "Loss" },
+];
+const GROUPS = [
+  { title: "Test set", prefix: "test" },
+  { title: "Train set", prefix: "train" },
+];
+
+
+const inputCls =
+  "w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm " +
+  "text-slate-900 outline-none transition focus:border-indigo-400 focus:bg-white " +
+  "focus:ring-4 focus:ring-indigo-100";
+
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+        {label}
+      </span>
+      {children}
+    </label>
+  );
+}
+
+
+function Badge({ status }: { status: string }) {
+  const styles: Record<string, string> = {
+    done: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+    running: "bg-amber-50 text-amber-700 ring-amber-200",
+    queued: "bg-slate-100 text-slate-600 ring-slate-200",
+    failed: "bg-rose-50 text-rose-700 ring-rose-200",
+    gone: "bg-slate-100 text-slate-500 ring-slate-200",
+  };
+  const cls = styles[status] ?? styles.queued;
+  const text = status === "gone" ? "backend restarted" : status;
+  return (
+    <span
+      className={
+        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset " +
+        cls
+      }>
+      <span
+        className={
+          "h-1.5 w-1.5 rounded-full bg-current " +
+          (status === "running" ? "animate-pulse" : "")
+        }
+      />
+      {text}
+    </span>
+  );
+}
 
 
 export default function Experiments() {
@@ -130,162 +186,231 @@ export default function Experiments() {
   };
 
 
-  // one metric value from a job, or "-" when it is not there yet
+  // one metric value from a job, or a dash when it is not there yet
   const metric = (j: Job | null | undefined, key: string) => {
-    const v = j && j.metrics ? j.metrics[key] : undefined;
+    let v = j && j.metrics ? j.metrics[key] : undefined;
+    if (v == null && key === "test_accuracy" && j && j.accuracy != null) {
+      v = j.accuracy;
+    }
     return v != null ? v.toFixed(3) : "-";
   };
 
 
   return (
-    <div>
-      <h2 className="mb-4 text-2xl font-bold">Experiments</h2>
-      <div className="flex flex-wrap items-end gap-3">
-        <label>
-          Model id
-          <input
-            type="number"
-            className="ml-2 w-20 rounded border px-2 py-1"
-            value={modelId}
-            onChange={(e) => setModelId(+e.target.value)}
-          />
-        </label>
-        <label>
-          Learning rate
-          <input
-            type="number"
-            step="any"
-            className="ml-2 w-28 rounded border px-2 py-1"
-            value={lr}
-            onChange={(e) => setLr(+e.target.value)}
-          />
-        </label>
-        <label>
-          Batch size
-          <input
-            type="number"
-            className="ml-2 w-20 rounded border px-2 py-1"
-            value={batch}
-            onChange={(e) => setBatch(+e.target.value)}
-          />
-        </label>
-        <label>
-          Epochs
-          <input
-            type="number"
-            className="ml-2 w-16 rounded border px-2 py-1"
-            value={epochs}
-            onChange={(e) => setEpochs(+e.target.value)}
-          />
-        </label>
-        <button
-          className="rounded bg-indigo-600 px-4 py-2 text-white"
-          onClick={start}>
-          Start run
-        </button>
-      </div>
-      {error && <p className="mt-3 text-red-600">{error}</p>}
+    <div className="space-y-6">
+      <header>
+        <h2 className="text-3xl font-bold tracking-tight text-slate-900">
+          Experiments
+        </h2>
+        <p className="mt-2 max-w-2xl text-slate-500">
+          Launch fine-tuning runs, track their metrics, and A/B test any two
+          finished runs against each other.
+        </p>
+      </header>
 
 
-      <div className="mt-6 overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr>
-              <th rowSpan={2} className="border-b py-2 pr-3">Pick</th>
-              <th rowSpan={2} className="border-b pr-3">Run</th>
-              <th rowSpan={2} className="border-b pr-3">Learning rate</th>
-              <th rowSpan={2} className="border-b pr-3">Batch</th>
-              <th rowSpan={2} className="border-b pr-3">Epochs</th>
-              <th rowSpan={2} className="border-b pr-3">Status</th>
-              <th colSpan={5} className="border-b border-l px-3 text-center">
-                Test set
-              </th>
-              <th colSpan={5} className="border-b border-l px-3 text-center">
-                Train set
-              </th>
-            </tr>
-            <tr className="border-b">
-              {NAMES.map((n, i) => (
-                <th
-                  key={"test-" + n}
-                  className={"px-3 capitalize " + (i === 0 ? "border-l" : "")}>
-                  {n === "f1" ? "F1" : n}
-                </th>
-              ))}
-              {NAMES.map((n, i) => (
-                <th
-                  key={"train-" + n}
-                  className={"px-3 capitalize " + (i === 0 ? "border-l" : "")}>
-                  {n === "f1" ? "F1" : n}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {saved.map((s) => {
-              const j = jobs[s.id];
-              const gone = j === null;
-              const done = !!j && j.status === "done";
-              return (
-                <tr key={s.id} className="border-b">
-                  <td className="py-2 pr-3">
-                    <input
-                      type="checkbox"
-                      disabled={!done}
-                      checked={picked.includes(s.id)}
-                      onChange={() => toggle(s.id)}
-                    />
-                  </td>
-                  <td className="pr-3">{s.id}</td>
-                  <td className="pr-3">{s.lr}</td>
-                  <td className="pr-3">{s.batch}</td>
-                  <td className="pr-3">{s.epochs}</td>
-                  <td className="pr-3">
-                    {gone ? "(backend restarted)" : j ? j.status : "..."}
-                  </td>
-                  <td className="border-l px-3">
-                    {j && j.accuracy != null ? j.accuracy.toFixed(3) : "-"}
-                  </td>
-                  <td className="px-3">{metric(j, "test_precision")}</td>
-                  <td className="px-3">{metric(j, "test_recall")}</td>
-                  <td className="px-3">{metric(j, "test_f1")}</td>
-                  <td className="px-3">{metric(j, "test_loss")}</td>
-                  <td className="border-l px-3">{metric(j, "train_accuracy")}</td>
-                  <td className="px-3">{metric(j, "train_precision")}</td>
-                  <td className="px-3">{metric(j, "train_recall")}</td>
-                  <td className="px-3">{metric(j, "train_f1")}</td>
-                  <td className="px-3">{metric(j, "train_loss")}</td>
+      <section className="rounded-2xl border border-slate-200/70 bg-white shadow-sm">
+        <div className="border-b border-slate-100 px-6 py-5">
+          <h3 className="font-semibold text-slate-900">New run</h3>
+          <p className="mt-1 text-sm text-slate-500">
+            Fine-tune an imported model with your own hyperparameters.
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-4 px-6 py-5 sm:grid-cols-4">
+          <Field label="Model id">
+            <input
+              type="number"
+              className={inputCls}
+              value={modelId}
+              onChange={(e) => setModelId(+e.target.value)}
+            />
+          </Field>
+          <Field label="Learning rate">
+            <input
+              type="number"
+              step="any"
+              className={inputCls}
+              value={lr}
+              onChange={(e) => setLr(+e.target.value)}
+            />
+          </Field>
+          <Field label="Batch size">
+            <input
+              type="number"
+              className={inputCls}
+              value={batch}
+              onChange={(e) => setBatch(+e.target.value)}
+            />
+          </Field>
+          <Field label="Epochs">
+            <input
+              type="number"
+              className={inputCls}
+              value={epochs}
+              onChange={(e) => setEpochs(+e.target.value)}
+            />
+          </Field>
+        </div>
+        <div className="px-6 pb-6">
+          <button
+            className="w-full rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 active:scale-[0.99] sm:w-auto"
+            onClick={start}>
+            Start run
+          </button>
+        </div>
+      </section>
+
+
+      {error && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          {error}
+        </div>
+      )}
+
+
+      <section className="rounded-2xl border border-slate-200/70 bg-white shadow-sm">
+        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
+          <div>
+            <h3 className="font-semibold text-slate-900">Runs</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              Tick two finished runs to compare them.
+            </p>
+          </div>
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+            {saved.length} {saved.length === 1 ? "run" : "runs"}
+          </span>
+        </div>
+
+
+        {saved.length === 0 ? (
+          <p className="px-6 py-10 text-center text-slate-500">
+            No runs yet. Start one above.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1100px] text-left text-sm">
+              <thead className="text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th rowSpan={2} className="px-6 py-3 font-semibold">Pick</th>
+                  <th rowSpan={2} className="px-3 font-semibold">Run</th>
+                  <th rowSpan={2} className="px-3 font-semibold">LR</th>
+                  <th rowSpan={2} className="px-3 font-semibold">Batch</th>
+                  <th rowSpan={2} className="px-3 font-semibold">Epochs</th>
+                  <th rowSpan={2} className="px-3 font-semibold">Status</th>
+                  {GROUPS.map((g) => (
+                    <th
+                      key={g.prefix}
+                      colSpan={COLS.length}
+                      className="border-l border-slate-100 bg-slate-50 px-3 py-2 text-center font-semibold text-slate-700">
+                      {g.title}
+                    </th>
+                  ))}
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-      {saved.length === 0 && (
-        <p className="mt-3 text-slate-500">No runs yet. Start one above.</p>
-      )}
+                <tr className="border-b border-slate-100">
+                  {GROUPS.map((g) =>
+                    COLS.map((c, i) => (
+                      <th
+                        key={g.prefix + c.key}
+                        className={
+                          "bg-slate-50 px-3 py-2 font-medium normal-case " +
+                          (i === 0 ? "border-l border-slate-100" : "")
+                        }>
+                        {c.label}
+                      </th>
+                    ))
+                  )}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {saved.map((s) => {
+                  const j = jobs[s.id];
+                  const gone = j === null;
+                  const done = !!j && j.status === "done";
+                  const status = gone ? "gone" : j ? j.status : "queued";
+                  return (
+                    <tr key={s.id} className="transition hover:bg-slate-50/70">
+                      <td className="px-6 py-3">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-slate-300 accent-indigo-600"
+                          disabled={!done}
+                          checked={picked.includes(s.id)}
+                          onChange={() => toggle(s.id)}
+                        />
+                      </td>
+                      <td className="px-3 font-medium text-slate-900">{s.id}</td>
+                      <td className="px-3 text-slate-600">{s.lr}</td>
+                      <td className="px-3 text-slate-600">{s.batch}</td>
+                      <td className="px-3 text-slate-600">{s.epochs}</td>
+                      <td className="px-3">
+                        <Badge status={status} />
+                      </td>
+                      {GROUPS.map((g) =>
+                        COLS.map((c, i) => (
+                          <td
+                            key={g.prefix + c.key}
+                            className={
+                              "px-3 tabular-nums text-slate-700 " +
+                              (i === 0 ? "border-l border-slate-100" : "")
+                            }>
+                            {metric(j, g.prefix + "_" + c.key)}
+                          </td>
+                        ))
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
 
 
-      {picked.length === 2 && (
-        <button
-          className="mt-4 rounded border px-4 py-2"
-          onClick={compare}>
-          Compare runs {picked[0]} and {picked[1]}
-        </button>
-      )}
+        {picked.length === 2 && (
+          <div className="border-t border-slate-100 px-6 py-4">
+            <button
+              className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100"
+              onClick={compare}>
+              Compare runs {picked[0]} and {picked[1]}
+            </button>
+          </div>
+        )}
+      </section>
 
 
       {ab && (
-        <div className="mt-4 rounded bg-amber-50 p-4">
-          <p>
-            Accuracy A: {ab.accuracy_a?.toFixed(3) ?? "-"} | Accuracy B:{" "}
-            {ab.accuracy_b?.toFixed(3) ?? "-"} | p-value:{" "}
-            {ab.p_value?.toFixed(4) ?? "-"}
-          </p>
-          <p className="mt-2 font-semibold">
+        <section className="rounded-2xl border border-amber-200 bg-amber-50/70 p-6">
+          <h3 className="font-semibold text-slate-900">A/B test result</h3>
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="rounded-xl bg-white p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Accuracy A
+              </p>
+              <p className="mt-1 text-2xl font-bold text-slate-900">
+                {ab.accuracy_a?.toFixed(3) ?? "-"}
+              </p>
+            </div>
+            <div className="rounded-xl bg-white p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Accuracy B
+              </p>
+              <p className="mt-1 text-2xl font-bold text-slate-900">
+                {ab.accuracy_b?.toFixed(3) ?? "-"}
+              </p>
+            </div>
+            <div className="rounded-xl bg-white p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                p-value
+              </p>
+              <p className="mt-1 text-2xl font-bold text-slate-900">
+                {ab.p_value?.toFixed(4) ?? "-"}
+              </p>
+            </div>
+          </div>
+          <p className="mt-4 font-semibold text-slate-800">
             {ab.verdict ?? "Waiting for the result..."}
           </p>
-        </div>
+        </section>
       )}
     </div>
   );
