@@ -92,16 +92,19 @@ python -c "from datasets import load_dataset; print(load_dataset('stanfordnlp/ss
 
 ---
 
-## Evaluation & Results
-Summary of model performance on the training and test metrics.
+## 📈 Evaluation & Results
+Performance of the fine-tuned [model Hub ID] on SST-2 binary sentiment classification (learning rate 2e-5, batch size 16, 1 epoch). The training set is a random 2,000-sentence subset of the SST-2 training split. The test set is a random 500-sentence sample of the SST-2 validation split (the official test labels are hidden).
 
 | Metric | Training Set | Test Set |
 | :--- | :--- | :--- |
-| Accuracy | [0.XX] | [0.XX] |
-| Precision / F1-Score | [0.XX] | [0.XX] |
-| Loss | [0.XX] | [0.XX] |
+| Accuracy | 0.888 | 0.816 |
+| Precision / F1-Score | 0.922 / 0.897 | 0.851 / 0.817 |
+| Recall | 0.874 | 0.785 |
+| Loss | 0.308 | 0.389 |
 
-*Include any relevant confusion matrices, training logs, or Optuna plots in an `assets/` directory and link them here.*
+All runs are logged to MLflow, and the Experiments page shows the same metrics for every run.
+
+![Experiments page with train and test metrics](assets/experiments-metrics.png)
 
 ---
 
