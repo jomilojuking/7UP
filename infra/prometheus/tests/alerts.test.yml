@@ -1,0 +1,85 @@
+# Unit tests for alerts.yml:
+#   docker run --rm -v "$PWD/infra/prometheus:/etc/prometheus:ro" --entrypoint promtool \
+#     prom/prometheus:v3.5.0 test rules /etc/prometheus/tests/alerts.test.yml
+rule_files:
+  - ../alerts.yml
+
+evaluation_interval: 15s
+
+tests:
+  # 10 req/s with 2 req/s failing (20% > 5%) -> HighErrorRate fires after `for: 1m`.
+  - name: error spike fires HighErrorRate
+    interval: 15s
+    input_series:
+      - series: 'http_requests_total{job="backend", handler="/models", method="GET", status="2xx"}'
+        values: '0+120x20'
+      - series: 'http_requests_total{job="backend", handler="/models", method="GET", status="5xx"}'
+        values: '0+30x20'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: HighErrorRate
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: HighErrorRate
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: backend
+            exp_annotations:
+              summary: "Backend 5xx error rate above 5%"
+              description: "20% of backend requests are failing with 5xx."
+              runbook_url: "https://github.com/jomilojuking/7UP/blob/main/docs/infra.md#runbook-higherrorrate"
+
+  # 1% errors stays below the threshold.
+  - name: low error rate stays quiet
+    interval: 15s
+    input_series:
+      - series: 'http_requests_total{job="backend", handler="/models", method="GET", status="2xx"}'
+        values: '0+1485x20'
+      - series: 'http_requests_total{job="backend", handler="/models", method="GET", status="5xx"}'
+        values: '0+15x20'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: HighErrorRate
+        exp_alerts: []
+
+  - name: scrape failure fires BackendDown
+    interval: 15s
+    input_series:
+      - series: 'up{job="backend", instance="backend:8000"}'
+        values: '1 1 0 0 0 0 0 0 0 0'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: BackendDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: backend
+              job: backend
+              instance: backend:8000
+            exp_annotations:
+              summary: "HFAIO backend is down"
+              description: "Prometheus has not been able to scrape the backend for more than 1 minute."
+              runbook_url: "https://github.com/jomilojuking/7UP/blob/main/docs/infra.md#runbook-backenddown"
+
+  # Every request takes ~2s -> p95 > 1s for 5m -> HighLatencyP95.
+  - name: slow requests fire HighLatencyP95
+    interval: 15s
+    input_series:
+      - series: 'http_request_duration_seconds_bucket{job="backend", handler="/models", method="GET", le="1"}'
+        values: '0x60'
+      - series: 'http_request_duration_seconds_bucket{job="backend", handler="/models", method="GET", le="2.5"}'
+        values: '0+10x60'
+      - series: 'http_request_duration_seconds_bucket{job="backend", handler="/models", method="GET", le="+Inf"}'
+        values: '0+10x60'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: HighLatencyP95
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: backend
+            exp_annotations:
+              summary: "Backend p95 latency above 1s"
+              description: "p95 request latency is 2.425s."
+              runbook_url: "https://github.com/jomilojuking/7UP/blob/main/docs/infra.md#runbook-highlatencyp95"

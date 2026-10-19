@@ -1,0 +1,41 @@
+# `helm test <release>` runs this pod. The deploy script runs it after every
+# rollout and rolls back if it fails.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "hfaio.fullname" . }}-smoke-test
+  labels:
+    {{- include "hfaio.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 100
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: smoke
+      image: {{ .Values.smokeTest.image }}
+      securityContext:
+        {{- toYaml .Values.containerSecurityContext | nindent 8 }}
+      env:
+        - name: BACKEND
+          value: {{ printf "http://%s:%v" (include "hfaio.backend.fullname" .) .Values.backend.service.port | quote }}
+        - name: FRONTEND
+          value: {{ printf "http://%s:%v" (include "hfaio.frontend.fullname" .) .Values.frontend.service.port | quote }}
+      command: ["/bin/sh", "-ec"]
+      args:
+        - |
+          check() { echo "checking $1"; curl -fsS --retry 5 --retry-delay 3 --retry-all-errors --max-time 10 "$1" > /dev/null; }
+          check "$BACKEND/health"
+          check "$BACKEND/metrics"
+          check "$BACKEND/models"
+          {{- if .Values.frontend.enabled }}
+          check "$FRONTEND/healthz"
+          check "$FRONTEND/api/health"
+          {{- end }}
+          echo "smoke test passed"

@@ -1,0 +1,149 @@
+# CD: on every merge to main
+#   1. build backend + frontend images and push them to GitHub Container Registry
+#   2. spin up a kind cluster on the runner, deploy with `helm upgrade --install`,
+#      smoke-test with `helm test`, and `helm rollback` automatically on failure
+#   3. report merge-to-deploy time in the job summary
+#
+# Repository secrets used (Settings > Secrets and variables > Actions):
+#   HF_TOKEN, HF_REPO  - optional, passed to the backend as a Kubernetes Secret
+name: CD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: cd-main
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build-push:
+    name: Build and push images
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      owner: ${{ steps.meta.outputs.owner }}
+      frontend: ${{ steps.meta.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Image metadata
+        id: meta
+        run: |
+          echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+          if [[ -f frontend/package-lock.json ]]; then echo "frontend=true" >> "$GITHUB_OUTPUT"; else echo "frontend=false" >> "$GITHUB_OUTPUT"; fi
+      - name: Free disk space (torch)
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Backend image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: backend
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.meta.outputs.owner }}/hfaio-backend:${{ steps.meta.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ steps.meta.outputs.owner }}/hfaio-backend:latest
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+      - name: Frontend image
+        if: steps.meta.outputs.frontend == 'true'
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: frontend
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.meta.outputs.owner }}/hfaio-frontend:${{ steps.meta.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ steps.meta.outputs.owner }}/hfaio-frontend:latest
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+  deploy:
+    name: Deploy to kind (Helm) with auto-rollback
+    runs-on: ubuntu-latest
+    needs: build-push
+    environment: kind
+    env:
+      TAG: ${{ needs.build-push.outputs.tag }}
+      BACKEND_IMAGE: ghcr.io/${{ needs.build-push.outputs.owner }}/hfaio-backend
+      FRONTEND_IMAGE: ghcr.io/${{ needs.build-push.outputs.owner }}/hfaio-frontend
+      FRONTEND_ENABLED: ${{ needs.build-push.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Free disk space (torch)
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+      - uses: helm/kind-action@1544676c07bb3570fcb70166beaa07c4528fd4aa # v1.15.1
+        with:
+          cluster_name: hfaio
+          config: infra/kind/kind-config.yaml
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # GHCR packages are private by default, so pull on the runner and side-load
+      # into kind instead of giving the cluster registry credentials.
+      - name: Load images into kind
+        run: |
+          images=("$BACKEND_IMAGE:$TAG")
+          [[ "$FRONTEND_ENABLED" == "true" ]] && images+=("$FRONTEND_IMAGE:$TAG")
+          for img in "${images[@]}"; do docker pull "$img"; done
+          kind load docker-image --name hfaio "${images[@]}"
+      - name: Create Kubernetes Secret from GitHub secrets
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_REPO: ${{ secrets.HF_REPO }}
+        run: |
+          kubectl create namespace hfaio --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n hfaio create secret generic hfaio-secrets \
+            --from-literal=HF_TOKEN="${HF_TOKEN}" \
+            --from-literal=HF_REPO="${HF_REPO}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+      - name: Deploy (helm upgrade --install, smoke test, auto-rollback)
+        run: |
+          infra/scripts/deploy.sh \
+            -f infra/helm/hfaio/values-kind.yaml \
+            --set secrets.existingSecret=hfaio-secrets \
+            --set backend.image.repository="$BACKEND_IMAGE" \
+            --set backend.image.tag="$TAG" \
+            --set frontend.enabled="$FRONTEND_ENABLED" \
+            --set frontend.image.repository="$FRONTEND_IMAGE" \
+            --set frontend.image.tag="$TAG"
+      - name: Merge-to-deploy time
+        if: success()
+        env:
+          COMMIT_TIME: ${{ github.event.head_commit.timestamp }}
+        run: |
+          now=$(date -u +%s)
+          start=$(date -u -d "${COMMIT_TIME:-now}" +%s)
+          secs=$(( now - start ))
+          {
+            echo "### Deployed \`$TAG\` to kind"
+            echo ""
+            echo "| Metric | Value |"
+            echo "| --- | --- |"
+            echo "| Merge-to-deploy time | $((secs / 60))m $((secs % 60))s |"
+            echo "| Backend image | \`$BACKEND_IMAGE:$TAG\` |"
+            echo "| Frontend deployed | $FRONTEND_ENABLED |"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Diagnostics
+        if: failure()
+        run: |
+          kubectl -n hfaio get all -o wide || true
+          kubectl -n hfaio describe pods || true
+          kubectl -n hfaio logs -l app.kubernetes.io/component=backend --tail=100 || true

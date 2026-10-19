@@ -1,0 +1,71 @@
+{{- if .Values.frontend.enabled }}
+{{- $f := .Values.frontend -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hfaio.frontend.fullname" . }}
+  labels:
+    {{- include "hfaio.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+spec:
+  {{- if not $f.autoscaling.enabled }}
+  replicas: {{ $f.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      {{- include "hfaio.selectorLabels" (dict "ctx" . "component" "frontend") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "hfaio.selectorLabels" (dict "ctx" . "component" "frontend") | nindent 8 }}
+      {{- with $f.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+        runAsUser: {{ $f.uid }}
+        runAsGroup: {{ $f.uid }}
+      containers:
+        - name: frontend
+          image: {{ include "hfaio.image" (dict "image" $f.image "ctx" .) }}
+          imagePullPolicy: {{ $f.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          env:
+            - name: BACKEND_URL
+              value: {{ printf "http://%s:%v" (include "hfaio.backend.fullname" .) .Values.backend.service.port | quote }}
+          ports:
+            - name: http
+              containerPort: {{ $f.port }}
+          readinessProbe:
+            {{- toYaml $f.readinessProbe | nindent 12 }}
+          livenessProbe:
+            {{- toYaml $f.livenessProbe | nindent 12 }}
+          resources:
+            {{- toYaml $f.resources | nindent 12 }}
+          # nginx renders its config and writes pid/cache files at startup,
+          # so these paths stay writable while the root filesystem is read-only.
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: nginx-conf
+              mountPath: /etc/nginx/conf.d
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: nginx-conf
+          emptyDir: {}
+{{- end }}

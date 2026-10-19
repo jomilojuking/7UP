@@ -1,0 +1,26 @@
+# Each area has its owner first, then a second reviewer from a different area.
+# GitHub requests review from these users automatically on every PR.
+
+# Default: everyone
+*                           @jomilojuking @grace502 @pekoma1
+
+# Backend and ML core (JK), second reviewer Grace
+/backend/                   @jomilojuking @grace502
+/backend/Dockerfile         @grace502 @jomilojuking
+
+# Frontend and experiment tracking (Pauline), second reviewer JK
+/frontend/                  @pekoma1 @jomilojuking
+/frontend/Dockerfile        @pekoma1 @grace502
+/frontend/nginx.conf.template @pekoma1 @grace502
+
+# Infrastructure and MLOps (Grace), second reviewer Pauline / JK
+/infra/                     @grace502 @pekoma1
+/.github/                   @grace502 @jomilojuking
+/docker-compose.yml         @grace502 @jomilojuking
+/.env.example               @grace502 @jomilojuking
+/ruff.toml                  @grace502 @jomilojuking
+
+# Docs: one architecture doc each
+/docs/backend.md            @jomilojuking @grace502
+/docs/frontend.md           @pekoma1 @jomilojuking
+/docs/infra.md              @grace502 @pekoma1

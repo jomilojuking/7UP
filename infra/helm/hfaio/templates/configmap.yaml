@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "hfaio.backend.fullname" . }}
+  labels:
+    {{- include "hfaio.labels" . | nindent 4 }}
+data:
+  {{- range $k, $v := .Values.backend.env }}
+  {{- if $v }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}
+  {{- end }}

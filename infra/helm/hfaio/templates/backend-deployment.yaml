@@ -1,0 +1,78 @@
+{{- $b := .Values.backend -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hfaio.backend.fullname" . }}
+  labels:
+    {{- include "hfaio.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  {{- if not $b.autoscaling.enabled }}
+  replicas: {{ $b.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0   # the old pod keeps serving until the new one is ready
+  selector:
+    matchLabels:
+      {{- include "hfaio.selectorLabels" (dict "ctx" . "component" "backend") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "hfaio.selectorLabels" (dict "ctx" . "component" "backend") | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with $b.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+        runAsUser: {{ $b.uid }}
+        runAsGroup: {{ $b.uid }}
+        fsGroup: {{ $b.uid }}
+      containers:
+        - name: backend
+          image: {{ include "hfaio.image" (dict "image" $b.image "ctx" .) }}
+          imagePullPolicy: {{ $b.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ $b.port }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "hfaio.backend.fullname" . }}
+            - secretRef:
+                name: {{ include "hfaio.secretName" . }}
+          startupProbe:
+            {{- toYaml $b.startupProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml $b.readinessProbe | nindent 12 }}
+          livenessProbe:
+            {{- toYaml $b.livenessProbe | nindent 12 }}
+          resources:
+            {{- toYaml $b.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          {{- if $b.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "hfaio.backend.fullname" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: tmp
+          emptyDir: {}

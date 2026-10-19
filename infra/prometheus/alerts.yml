@@ -1,0 +1,63 @@
+# Alert rules. Each alert links to its runbook section in docs/infra.md.
+# Metric names come from prometheus-fastapi-instrumentator:
+#   http_requests_total{handler, method, status="2xx|4xx|5xx"}
+#   http_request_duration_seconds_bucket{handler, method, le}
+groups:
+  - name: hfaio-backend
+    rules:
+      - alert: BackendDown
+        expr: up{job="backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: backend
+        annotations:
+          summary: "HFAIO backend is down"
+          description: "Prometheus has not been able to scrape the backend for more than 1 minute."
+          runbook_url: "https://github.com/jomilojuking/7UP/blob/main/docs/infra.md#runbook-backenddown"
+
+      - alert: HighErrorRate
+        # Share of requests answered with 5xx over the last 2 minutes.
+        expr: |
+          (
+            sum(rate(http_requests_total{job="backend", status="5xx"}[2m]))
+            /
+            sum(rate(http_requests_total{job="backend"}[2m]))
+          ) > 0.05
+        for: 1m
+        labels:
+          severity: critical
+          service: backend
+        annotations:
+          summary: "Backend 5xx error rate above 5%"
+          description: "{{ $value | humanizePercentage }} of backend requests are failing with 5xx."
+          runbook_url: "https://github.com/jomilojuking/7UP/blob/main/docs/infra.md#runbook-higherrorrate"
+
+      - alert: HighLatencyP95
+        # Excludes /metrics so scrapes do not dilute the signal.
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(http_request_duration_seconds_bucket{job="backend", handler!="/metrics"}[5m]))
+          ) > 1
+        for: 5m
+        labels:
+          severity: warning
+          service: backend
+        annotations:
+          summary: "Backend p95 latency above 1s"
+          description: "p95 request latency is {{ $value | humanizeDuration }}."
+          runbook_url: "https://github.com/jomilojuking/7UP/blob/main/docs/infra.md#runbook-highlatencyp95"
+
+  - name: hfaio-host
+    rules:
+      - alert: HostLowMemory
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.10
+        for: 5m
+        labels:
+          severity: warning
+          service: host
+        annotations:
+          summary: "Host memory below 10% available"
+          description: "Fine-tuning runs may be OOM-killed. Available: {{ $value | humanizePercentage }}."
+          runbook_url: "https://github.com/jomilojuking/7UP/blob/main/docs/infra.md#runbook-hostlowmemory"
