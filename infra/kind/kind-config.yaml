@@ -1,0 +1,7 @@
+# Local single-node Kubernetes cluster for HFAIO: infra/scripts/kind-up.sh
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: hfaio
+nodes:
+  - role: control-plane
+    image: kindest/node:v1.33.1

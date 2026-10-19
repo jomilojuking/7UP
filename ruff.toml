@@ -1,0 +1,8 @@
+# Shared lint config used by CI (`ruff check backend`).
+# Start with the correctness rules (pyflakes + pycodestyle errors) so CI stays
+# green on real bugs only; widen `select` as the team cleans up the code.
+target-version = "py311"
+line-length = 100
+
+[lint]
+select = ["E4", "E7", "E9", "F"]

@@ -1,0 +1,17 @@
+HFAIO {{ .Chart.AppVersion }} is deployed as release "{{ .Release.Name }}".
+
+Backend image:  {{ include "hfaio.image" (dict "image" .Values.backend.image "ctx" .) }}
+Frontend image: {{ include "hfaio.image" (dict "image" .Values.frontend.image "ctx" .) }}
+
+Smoke test:
+  helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
+
+Open the app:
+{{- if .Values.ingress.enabled }}
+{{- range .Values.ingress.hosts }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}/
+{{- end }}
+{{- else }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "hfaio.frontend.fullname" . }} 3000:{{ .Values.frontend.service.port }}
+  open http://localhost:3000
+{{- end }}

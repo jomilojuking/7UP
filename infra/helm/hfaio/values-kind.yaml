@@ -1,0 +1,24 @@
+# Values for the local kind cluster (infra/kind). Images are side-loaded with
+# `kind load docker-image`, so never try to pull them.
+backend:
+  image:
+    pullPolicy: Never
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 3Gi
+  env:
+    MAX_TRAIN: "500"
+    MAX_EVAL: "200"
+
+frontend:
+  image:
+    pullPolicy: Never
+
+# No ingress controller on kind; reach the app with
+#   kubectl -n hfaio port-forward svc/hfaio-frontend 3000:80
+ingress:
+  enabled: false

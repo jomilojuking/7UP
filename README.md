@@ -48,11 +48,13 @@ cd frontend
 npm install
 npm run dev
 
-# Or run the whole stack
-docker compose up
+# Or run the whole stack (backend, frontend, Postgres, Redis, MLflow, Prometheus, Grafana)
+cp .env.example .env    # then set the passwords and SLACK_WEBHOOK_URL
+docker compose up --build
 ```
 
 Copy `.env.example` to `.env` and fill in your own values. Never commit secrets.
+Kubernetes (kind + Helm), CI/CD, monitoring and the runbook: see [docs/infra.md](docs/infra.md).
 
 ---
 
@@ -71,7 +73,7 @@ Copy `.env.example` to `.env` and fill in your own values. Never commit secrets.
 ### System Overview
 *   **Backend (`/backend`):** FastAPI endpoints for importing models, fine-tuning, tuning studies, and A/B tests.
 *   **Frontend (`/frontend`):** React and Tailwind dashboard with Plotly.js charts for tuning progress and experiments.
-*   **Infrastructure (`/infra`, `/.github`):** Dockerfiles, Helm charts, CI/CD workflows, Prometheus and Grafana dashboards, Slack alerts.
+*   **Infrastructure (`/infra`, `/.github`):** Dockerfiles, Docker Compose, Helm chart deployed to kind, GitHub Actions CI/CD with automatic rollback, Prometheus alerts, Grafana dashboard, Slack alerts. Details in [docs/infra.md](docs/infra.md).
 
 ---
 

@@ -1,0 +1,9 @@
+apiVersion: v2
+name: hfaio
+description: HFAIO (Hugging Face AI MLOps Orchestrator) - FastAPI backend and React frontend
+type: application
+version: 0.1.0
+appVersion: "latest"
+keywords: [mlops, huggingface, fastapi, optuna]
+maintainers:
+  - name: grace502
