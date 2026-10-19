@@ -32,13 +32,33 @@ def _load_data(tokenizer, need_train=True):
 
 
 def _metrics(p):
+    """Accuracy, precision, recall and F1 (positive class = 1)."""
     preds = np.argmax(p.predictions, axis=1)
-    return {"accuracy": float((preds == p.label_ids).mean())}
+    labels = p.label_ids
+    tp = int(((preds == 1) & (labels == 1)).sum())
+    fp = int(((preds == 1) & (labels == 0)).sum())
+    fn = int(((preds == 0) & (labels == 1)).sum())
+    precision = tp / (tp + fp) if (tp + fp) else 0.0
+    recall = tp / (tp + fn) if (tp + fn) else 0.0
+    f1 = (2 * precision * recall / (precision + recall)
+          if (precision + recall) else 0.0)
+    return {
+        "accuracy": float((preds == labels).mean()),
+        "precision": float(precision),
+        "recall": float(recall),
+        "f1": float(f1),
+    }
 
 
 def train(hub_id, learning_rate, batch_size, epochs,
-          weight_decay=0.0, output_dir="outputs/run", callbacks=None, save=False):
-    """Fine-tune a Hugging Face model and return eval accuracy."""
+          weight_decay=0.0, output_dir="outputs/run", callbacks=None, save=False,
+          metrics_out=None):
+    """Fine-tune a Hugging Face model and return eval accuracy.
+
+    Also logs train_* and test_* metrics (loss, accuracy, precision, recall,
+    F1) to the active MLflow run, if there is one. If a dict is passed as
+    metrics_out, the same metrics are copied into it for the caller.
+    """
     tokenizer = AutoTokenizer.from_pretrained(hub_id)
     model = AutoModelForSequenceClassification.from_pretrained(hub_id, num_labels=2)
     train_ds, eval_ds = _load_data(tokenizer)
@@ -66,7 +86,29 @@ def train(hub_id, learning_rate, batch_size, epochs,
         callbacks=callbacks or [],
     )
     trainer.train()
-    acc = trainer.evaluate()["eval_accuracy"]
+
+    # final metrics on the evaluation set (validation sample)
+    test = trainer.evaluate()
+    acc = test["eval_accuracy"]
+
+    # same metrics on the training subset
+    train_m = trainer.evaluate(eval_dataset=train_ds, metric_key_prefix="trainset")
+
+    extra = {}
+    for name in ("loss", "accuracy", "precision", "recall", "f1"):
+        extra[f"test_{name}"] = float(test[f"eval_{name}"])
+        extra[f"train_{name}"] = float(train_m[f"trainset_{name}"])
+
+    try:
+        import mlflow
+        if mlflow.active_run():
+            mlflow.log_metrics(extra)
+    except Exception:
+        pass  # never let logging break a training run
+
+    if metrics_out is not None:
+        metrics_out.update(extra)
+
     if save:
         trainer.save_model(output_dir)
         tokenizer.save_pretrained(output_dir)

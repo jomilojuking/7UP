@@ -3,7 +3,12 @@ import { request } from "../api";
 
 
 type Saved = { id: number; lr: number; batch: number; epochs: number };
-type Job = { id: number; status: string; accuracy: number | null };
+type Job = {
+  id: number;
+  status: string;
+  accuracy: number | null;
+  metrics?: Record<string, number> | null;
+};
 type AB = {
   id: number;
   status: string;
@@ -33,6 +38,9 @@ function storeSaved(list: Saved[]) {
     // storage unavailable, the page still works for this visit
   }
 }
+
+
+const NAMES = ["accuracy", "precision", "recall", "f1", "loss"];
 
 
 export default function Experiments() {
@@ -122,6 +130,13 @@ export default function Experiments() {
   };
 
 
+  // one metric value from a job, or "-" when it is not there yet
+  const metric = (j: Job | null | undefined, key: string) => {
+    const v = j && j.metrics ? j.metrics[key] : undefined;
+    return v != null ? v.toFixed(3) : "-";
+  };
+
+
   return (
     <div>
       <h2 className="mb-4 text-2xl font-bold">Experiments</h2>
@@ -172,44 +187,80 @@ export default function Experiments() {
       {error && <p className="mt-3 text-red-600">{error}</p>}
 
 
-      <table className="mt-6 w-full text-left">
-        <thead>
-          <tr className="border-b">
-            <th className="py-2">Pick</th>
-            <th>Run</th>
-            <th>Learning rate</th>
-            <th>Batch</th>
-            <th>Epochs</th>
-            <th>Status</th>
-            <th>Accuracy</th>
-          </tr>
-        </thead>
-        <tbody>
-          {saved.map((s) => {
-            const j = jobs[s.id];
-            const gone = j === null;
-            const done = !!j && j.status === "done";
-            return (
-              <tr key={s.id} className="border-b">
-                <td className="py-2">
-                  <input
-                    type="checkbox"
-                    disabled={!done}
-                    checked={picked.includes(s.id)}
-                    onChange={() => toggle(s.id)}
-                  />
-                </td>
-                <td>{s.id}</td>
-                <td>{s.lr}</td>
-                <td>{s.batch}</td>
-                <td>{s.epochs}</td>
-                <td>{gone ? "(backend restarted)" : j ? j.status : "..."}</td>
-                <td>{j && j.accuracy != null ? j.accuracy.toFixed(3) : "-"}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      <div className="mt-6 overflow-x-auto">
+        <table className="w-full text-left text-sm">
+          <thead>
+            <tr>
+              <th rowSpan={2} className="border-b py-2 pr-3">Pick</th>
+              <th rowSpan={2} className="border-b pr-3">Run</th>
+              <th rowSpan={2} className="border-b pr-3">Learning rate</th>
+              <th rowSpan={2} className="border-b pr-3">Batch</th>
+              <th rowSpan={2} className="border-b pr-3">Epochs</th>
+              <th rowSpan={2} className="border-b pr-3">Status</th>
+              <th colSpan={5} className="border-b border-l px-3 text-center">
+                Test set
+              </th>
+              <th colSpan={5} className="border-b border-l px-3 text-center">
+                Train set
+              </th>
+            </tr>
+            <tr className="border-b">
+              {NAMES.map((n, i) => (
+                <th
+                  key={"test-" + n}
+                  className={"px-3 capitalize " + (i === 0 ? "border-l" : "")}>
+                  {n === "f1" ? "F1" : n}
+                </th>
+              ))}
+              {NAMES.map((n, i) => (
+                <th
+                  key={"train-" + n}
+                  className={"px-3 capitalize " + (i === 0 ? "border-l" : "")}>
+                  {n === "f1" ? "F1" : n}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {saved.map((s) => {
+              const j = jobs[s.id];
+              const gone = j === null;
+              const done = !!j && j.status === "done";
+              return (
+                <tr key={s.id} className="border-b">
+                  <td className="py-2 pr-3">
+                    <input
+                      type="checkbox"
+                      disabled={!done}
+                      checked={picked.includes(s.id)}
+                      onChange={() => toggle(s.id)}
+                    />
+                  </td>
+                  <td className="pr-3">{s.id}</td>
+                  <td className="pr-3">{s.lr}</td>
+                  <td className="pr-3">{s.batch}</td>
+                  <td className="pr-3">{s.epochs}</td>
+                  <td className="pr-3">
+                    {gone ? "(backend restarted)" : j ? j.status : "..."}
+                  </td>
+                  <td className="border-l px-3">
+                    {j && j.accuracy != null ? j.accuracy.toFixed(3) : "-"}
+                  </td>
+                  <td className="px-3">{metric(j, "test_precision")}</td>
+                  <td className="px-3">{metric(j, "test_recall")}</td>
+                  <td className="px-3">{metric(j, "test_f1")}</td>
+                  <td className="px-3">{metric(j, "test_loss")}</td>
+                  <td className="border-l px-3">{metric(j, "train_accuracy")}</td>
+                  <td className="px-3">{metric(j, "train_precision")}</td>
+                  <td className="px-3">{metric(j, "train_recall")}</td>
+                  <td className="px-3">{metric(j, "train_f1")}</td>
+                  <td className="px-3">{metric(j, "train_loss")}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
       {saved.length === 0 && (
         <p className="mt-3 text-slate-500">No runs yet. Start one above.</p>
       )}

@@ -25,6 +25,7 @@ class FinetuneJob(BaseModel):
     id: int
     status: str  # queued, running, done, failed
     accuracy: Optional[float] = None
+    metrics: Optional[dict[str, float]] = None
     model_dir: Optional[str] = None
     hub_url: Optional[str] = None
     error: Optional[str] = None
