@@ -46,7 +46,9 @@ export default function Experiments() {
   const [ab, setAb] = useState<AB | null>(null);
   const [error, setError] = useState("");
   const jobsRef = useRef(jobs);
-  jobsRef.current = jobs;
+  useEffect(() => {
+    jobsRef.current = jobs;
+  }, [jobs]);
 
 
   const start = async () => {
