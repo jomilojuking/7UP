@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { request } from "../api";
 
-
 type Saved = { id: number; lr: number; batch: number; epochs: number };
 type Job = { id: number; status: string; accuracy: number | null };
 type AB = {
@@ -13,9 +12,7 @@ type AB = {
   verdict: string | null;
 };
 
-
 const KEY = "jobs";
-
 
 function loadSaved(): Saved[] {
   try {
@@ -25,7 +22,6 @@ function loadSaved(): Saved[] {
   }
 }
 
-
 function storeSaved(list: Saved[]) {
   try {
     localStorage.setItem(KEY, JSON.stringify(list));
@@ -33,7 +29,6 @@ function storeSaved(list: Saved[]) {
     // storage unavailable, the page still works for this visit
   }
 }
-
 
 export default function Experiments() {
   const [modelId, setModelId] = useState(1);
@@ -46,8 +41,10 @@ export default function Experiments() {
   const [ab, setAb] = useState<AB | null>(null);
   const [error, setError] = useState("");
   const jobsRef = useRef(jobs);
-  jobsRef.current = jobs;
 
+  useEffect(() => {
+    jobsRef.current = jobs;
+  }, [jobs]);
 
   const start = async () => {
     setError("");
@@ -65,11 +62,10 @@ export default function Experiments() {
       setSaved(next);
       storeSaved(next);
       setJobs((all) => ({ ...all, [job.id]: job }));
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e) {
+      setError((e as Error).message);
     }
   };
-
 
   useEffect(() => {
     const tick = async () => {
@@ -80,8 +76,8 @@ export default function Experiments() {
         try {
           const j: Job = await request("/finetune/jobs/" + s.id);
           setJobs((all) => ({ ...all, [s.id]: j }));
-        } catch (e: any) {
-          if (String(e.message).includes("Unknown")) {
+        } catch (e) {
+          if (String((e as Error).message).includes("Unknown")) {
             setJobs((all) => ({ ...all, [s.id]: null }));
           }
         }
@@ -92,13 +88,11 @@ export default function Experiments() {
     return () => clearInterval(timer);
   }, [saved]);
 
-
   const toggle = (id: number) => {
     setPicked((p) =>
       p.includes(id) ? p.filter((x) => x !== id) : p.length < 2 ? [...p, id] : p
     );
   };
-
 
   const compare = async () => {
     setError("");
@@ -114,11 +108,10 @@ export default function Experiments() {
         if (res.verdict || res.status === "done" || res.status === "failed") break;
         await new Promise((resolve) => setTimeout(resolve, 2000));
       }
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e) {
+      setError((e as Error).message);
     }
   };
-
 
   return (
     <div>
@@ -169,7 +162,6 @@ export default function Experiments() {
       </div>
       {error && <p className="mt-3 text-red-600">{error}</p>}
 
-
       <table className="mt-6 w-full text-left">
         <thead>
           <tr className="border-b">
@@ -212,7 +204,6 @@ export default function Experiments() {
         <p className="mt-3 text-slate-500">No runs yet. Start one above.</p>
       )}
 
-
       {picked.length === 2 && (
         <button
           className="mt-4 rounded border px-4 py-2"
@@ -220,7 +211,6 @@ export default function Experiments() {
           Compare runs {picked[0]} and {picked[1]}
         </button>
       )}
-
 
       {ab && (
         <div className="mt-4 rounded bg-amber-50 p-4">
