@@ -52,10 +52,11 @@ def _run_finetune(job_id, hub_id, req: FinetuneRequest):
             with mlflow.start_run(run_name=f"finetune-{job_id}"):
                 mlflow.log_params({"model": hub_id, "lr": req.learning_rate,
                                    "batch_size": req.batch_size, "epochs": req.epochs})
+                metrics = {}
                 acc = train(hub_id, req.learning_rate, req.batch_size, req.epochs,
-                            output_dir=out_dir, save=True)
+                            output_dir=out_dir, save=True, metrics_out=metrics)
                 mlflow.log_metric("accuracy", acc)
-            job.update(accuracy=acc, model_dir=out_dir)
+            job.update(accuracy=acc, metrics=metrics, model_dir=out_dir)
             if req.push_to_hub and os.getenv("HF_TOKEN") and os.getenv("HF_REPO"):
                 job["hub_url"] = hub.push_folder(out_dir, os.environ["HF_REPO"], acc, hub_id)
             job["status"] = "done"
