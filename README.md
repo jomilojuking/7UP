@@ -52,8 +52,16 @@ npm install
 npm run dev
 ```
 
-The frontend calls `http://127.0.0.1:8000` by default. To point it at a different backend (for example the hosted one), create `frontend/.env.local` containing `VITE_API_URL=<backend url>` and restart `npm run dev`. Delete that file to go back to the local backend.
+### Deployment
 
+The app is deployed in two parts:
+
+*   **Backend:** the FastAPI service runs in a Docker Space on Hugging Face ([jomilojuking/hfaio-backend](https://huggingface.co/spaces/jomilojuking/hfaio-backend)), on the free CPU tier (2 cores). The Space uses its own `Dockerfile`, which installs the CPU build of PyTorch and the packages from `requirements.txt` and serves the API on port 7860. Saved models and database files are not included in the Space.
+*   **Frontend:** the React app is built with `VITE_API_URL` set to the Space's address and hosted on Vercel at [hfaio.vercel.app](https://hfaio.vercel.app/).
+
+Because the free server is small, the Space uses a shortened training setup, set as environment variables in its `Dockerfile`: `MAX_TRAIN=500`, `MAX_EVAL=200`, and `TUNE_EPOCHS=1` (one epoch per tuning trial). Scores on the hosted site are therefore lower than the results below, which came from a local run. The Space's disk is not persistent, so imported models, runs, and tuning studies reset whenever it restarts.
+
+To run the frontend against a different backend, create `frontend/.env.local` containing `VITE_API_URL=<backend url>` and restart `npm run dev`. By default it calls `http://127.0.0.1:8000`. Delete that file to go back to the local backend.
 ### Full stack with Docker
 Runs the backend, frontend, Postgres, Redis, MLflow, Prometheus and Grafana together:
 ```bash
