@@ -6,7 +6,7 @@ HFAIO automates the model lifecycle for Machine Learning Engineers: it fine-tune
 
 **Problem:** binary sentiment classification (positive vs. negative) on the SST-2 movie-review dataset. Any Hugging Face sequence-classification model can be imported by its Hub ID, fine-tuned, tuned, and compared on the same evaluation set.
 
-**Model:** [Add the model(s) you demo, e.g. the Hub ID(s) shown in the Model Hub page.]
+**Model:** 
 
 ## Team Members & Contributions
 As per course requirements, all three members actively collaborate and commit to this repository.
