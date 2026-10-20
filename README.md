@@ -21,7 +21,7 @@ As per course requirements, all three members actively collaborate and commit to
 
 
 ### Project Walkthrough
-![Project Demo Walkthrough](<img width="960" height="508" alt="7UP Video" src="https://github.com/user-attachments/assets/d83f355b-4f62-4222-9bc1-16fbc5ca3929" />) Project Gif
+![<img width="960" height="508" alt="7UP Video" src="https://github.com/user-attachments/assets/d83f355b-4f62-4222-9bc1-16fbc5ca3929" />](Project Gif)
 
 )
 
