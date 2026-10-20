@@ -17,8 +17,8 @@ As per course requirements, all three members actively collaborate and commit to
 ---
 
 ## Live Demo
-*   **Application URL:** [Insert link to live app]
-*   *Note: the live demo must be fully functional and accessible during the project presentation.*
+*   **Application URL:** (https://hfaio.vercel.app/)
+
 
 ### Project Walkthrough
 ![Project Demo Walkthrough](demo.gif)
