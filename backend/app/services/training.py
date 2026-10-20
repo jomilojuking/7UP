@@ -92,8 +92,7 @@ def train(hub_id, learning_rate, batch_size, epochs,
     acc = test["eval_accuracy"]
 
     # same metrics on the training subset
-    train_m = trainer.evaluate(eval_dataset=train_ds, metric_key_prefix="trainset")
-
+    train_m = trainer.predict(train_ds, metric_key_prefix="trainset").metrics
     extra = {}
     for name in ("loss", "accuracy", "precision", "recall", "f1"):
         extra[f"test_{name}"] = float(test[f"eval_{name}"])
