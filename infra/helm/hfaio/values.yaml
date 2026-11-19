@@ -33,9 +33,10 @@ backend:
   # Non-secret config, rendered into a ConfigMap.
   env:
     LOG_LEVEL: INFO
-    MAX_TRAIN: "2000"
+    MAX_TRAIN: "4000"
     MAX_EVAL: "500"
-    SUGGEST_MODEL: meta-llama/Llama-3.2-3B-Instruct
+    INSIGHT_MODELS: mistralai/Mistral-7B-Instruct-v0.3,meta-llama/Llama-3.1-8B-Instruct
+    MAX_ACTIVE_JOBS: "3"
     MLFLOW_TRACKING_URI: ""
   resources:
     requests:
@@ -114,6 +115,7 @@ secrets:
   existingSecret: ""
   HF_TOKEN: ""
   HF_REPO: ""
+  HFAIO_API_KEY: ""   # when set, POST endpoints require the X-API-Key header
 
 ingress:
   enabled: false

@@ -1,14 +1,23 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { request } from "../api";
+import DatasetPicker from "../components/DatasetPicker";
+import InsightsPanel from "../components/InsightsPanel";
+import { SPACE_KEY, SST2, type DatasetSpec, type Insights, type SearchSpace } from "../types";
 
 
-type Saved = { id: number; lr: number; batch: number; epochs: number };
+type Saved = { id: number; lr: number; batch: number; epochs: number; wd?: number; dataset?: string };
 type Job = {
   id: number;
   status: string;
   accuracy: number | null;
   metrics?: Record<string, number> | null;
+  dataset?: string | null;
+  hub_url?: string | null;
+  hub_error?: string | null;
+  error?: string | null;
 };
+
 type AB = {
   id: number;
   status: string;
@@ -103,7 +112,14 @@ export default function Experiments() {
   const [modelId, setModelId] = useState(1);
   const [lr, setLr] = useState(0.00002);
   const [batch, setBatch] = useState(16);
-  const [epochs, setEpochs] = useState(1);
+  const [epochs, setEpochs] = useState(3);
+  const [wd, setWd] = useState(0.01);
+  const [warmup, setWarmup] = useState(0.1);
+  const [push, setPush] = useState(true);
+  const [dataset, setDataset] = useState<DatasetSpec>(SST2);
+  const [insights, setInsights] = useState<{ id: number; data: Insights } | null>(null);
+  const [thinking, setThinking] = useState<number | null>(null);
+  const navigate = useNavigate();
   const [saved, setSaved] = useState<Saved[]>(loadSaved);
   const [jobs, setJobs] = useState<Record<number, Job | null>>({});
   const [picked, setPicked] = useState<number[]>([]);
@@ -125,9 +141,13 @@ export default function Experiments() {
           learning_rate: lr,
           batch_size: batch,
           epochs: epochs,
+          weight_decay: wd,
+          warmup_ratio: warmup,
+          dataset,
+          push_to_hub: push,
         }),
       });
-      const next = [...saved, { id: job.id, lr, batch, epochs }];
+      const next = [...saved, { id: job.id, lr, batch, epochs, wd, dataset: job.dataset ?? "" }];
       setSaved(next);
       storeSaved(next);
       setJobs((all) => ({ ...all, [job.id]: job }));
@@ -186,6 +206,29 @@ export default function Experiments() {
   };
 
 
+  const explain = async (id: number) => {
+    setError("");
+    setThinking(id);
+    try {
+      const data: Insights = await request(`/insights/jobs/${id}`, { method: "POST" });
+      setInsights({ id, data });
+    } catch (e: any) {
+      setError(e.message);
+    }
+    setThinking(null);
+  };
+
+
+  const tuneWith = (space: SearchSpace) => {
+    try {
+      localStorage.setItem(SPACE_KEY, JSON.stringify(space));
+    } catch {
+      // storage unavailable; Tuning Studio just opens with its defaults
+    }
+    navigate("/tuning");
+  };
+
+
   // one metric value from a job, or a dash when it is not there yet
   const metric = (j: Job | null | undefined, key: string) => {
     let v = j && j.metrics ? j.metrics[key] : undefined;
@@ -216,7 +259,10 @@ export default function Experiments() {
             Fine-tune an imported model with your own hyperparameters.
           </p>
         </div>
-        <div className="grid grid-cols-2 gap-4 px-6 py-5 sm:grid-cols-4">
+        <div className="border-b border-slate-100 px-6 py-5">
+          <DatasetPicker value={dataset} onChange={setDataset} />
+        </div>
+        <div className="grid grid-cols-2 gap-4 px-6 py-5 sm:grid-cols-6">
           <Field label="Model id">
             <input
               type="number"
@@ -250,13 +296,44 @@ export default function Experiments() {
               onChange={(e) => setEpochs(+e.target.value)}
             />
           </Field>
+          <Field label="Weight decay">
+            <input
+              type="number"
+              step="any"
+              className={inputCls}
+              value={wd}
+              onChange={(e) => setWd(+e.target.value)}
+            />
+          </Field>
+          <Field label="Warmup ratio">
+            <input
+              type="number"
+              step="any"
+              className={inputCls}
+              value={warmup}
+              onChange={(e) => setWarmup(+e.target.value)}
+            />
+          </Field>
         </div>
-        <div className="px-6 pb-6">
+        <p className="px-6 pb-4 text-xs text-slate-500">
+          Learning rate warms up linearly, then decays to zero. The best epoch is kept and
+          training stops early once test accuracy stops improving.
+        </p>
+        <div className="flex flex-wrap items-center gap-4 px-6 pb-6">
           <button
             className="w-full rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 active:scale-[0.99] sm:w-auto"
             onClick={start}>
             Start run
           </button>
+          <label className="flex items-center gap-2 text-sm text-slate-600">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-slate-300 accent-indigo-600"
+              checked={push}
+              onChange={(e) => setPush(e.target.checked)}
+            />
+            Push the trained model to the Hugging Face Hub (versioned, survives restarts)
+          </label>
         </div>
       </section>
 
@@ -288,7 +365,7 @@ export default function Experiments() {
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1100px] text-left text-sm">
+            <table className="w-full min-w-[1400px] text-left text-sm">
               <thead className="text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <th rowSpan={2} className="px-6 py-3 font-semibold">Pick</th>
@@ -296,7 +373,10 @@ export default function Experiments() {
                   <th rowSpan={2} className="px-3 font-semibold">LR</th>
                   <th rowSpan={2} className="px-3 font-semibold">Batch</th>
                   <th rowSpan={2} className="px-3 font-semibold">Epochs</th>
+                  <th rowSpan={2} className="px-3 font-semibold">Dataset</th>
                   <th rowSpan={2} className="px-3 font-semibold">Status</th>
+                  <th rowSpan={2} className="px-3 font-semibold">Hub</th>
+                  <th rowSpan={2} className="px-3 font-semibold">Insights</th>
                   {GROUPS.map((g) => (
                     <th
                       key={g.prefix}
@@ -342,8 +422,31 @@ export default function Experiments() {
                       <td className="px-3 text-slate-600">{s.lr}</td>
                       <td className="px-3 text-slate-600">{s.batch}</td>
                       <td className="px-3 text-slate-600">{s.epochs}</td>
-                      <td className="px-3">
+                      <td className="px-3 font-mono text-xs text-slate-600">
+                        {j?.dataset ?? s.dataset ?? "-"}
+                      </td>
+                      <td className="px-3" title={j?.error ?? undefined}>
                         <Badge status={status} />
+                      </td>
+                      <td className="px-3 text-xs">
+                        {j?.hub_url ? (
+                          <a href={j.hub_url} target="_blank" rel="noreferrer"
+                            className="font-medium text-indigo-600 hover:underline">
+                            View
+                          </a>
+                        ) : j?.hub_error ? (
+                          <span className="text-rose-600" title={j.hub_error}>failed</span>
+                        ) : (
+                          <span className="text-slate-400">-</span>
+                        )}
+                      </td>
+                      <td className="px-3">
+                        <button
+                          className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-40"
+                          disabled={!done || thinking !== null}
+                          onClick={() => explain(s.id)}>
+                          {thinking === s.id ? "..." : "Explain"}
+                        </button>
                       </td>
                       {GROUPS.map((g) =>
                         COLS.map((c, i) => (
@@ -376,6 +479,15 @@ export default function Experiments() {
           </div>
         )}
       </section>
+
+
+      {insights && (
+        <div className="space-y-2">
+          <p className="text-sm font-semibold text-slate-700">Run {insights.id}</p>
+          <InsightsPanel data={insights.data} onUseSpace={tuneWith}
+            onClose={() => setInsights(null)} />
+        </div>
+      )}
 
 
       {ab && (

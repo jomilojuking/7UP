@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import Plotly from "plotly.js-dist-min";
 import createPlotlyComponent from "react-plotly.js/factory";
 import { request } from "../api";
+import DatasetPicker from "../components/DatasetPicker";
+import InsightsPanel from "../components/InsightsPanel";
+import { DEFAULT_SPACE, SPACE_KEY, SST2, type DatasetSpec, type Insights, type SearchSpace } from "../types";
 
 
 const Plot = createPlotlyComponent(Plotly);
@@ -83,17 +86,39 @@ export default function TuningStudio() {
   const [expected, setExpected] = useState(0);
   const [trials, setTrials] = useState<Trial[]>([]);
   const [error, setError] = useState("");
-  const [suggestion, setSuggestion] = useState("");
+  const [dataset, setDataset] = useState<DatasetSpec>(SST2);
+  const [space, setSpace] = useState<SearchSpace>(() => {
+    // A run's "Use these ranges" on the Experiments page lands here.
+    try {
+      const saved = localStorage.getItem(SPACE_KEY);
+      if (saved) {
+        localStorage.removeItem(SPACE_KEY);
+        return { ...DEFAULT_SPACE, ...JSON.parse(saved) };
+      }
+    } catch {
+      // ignore unreadable storage
+    }
+    return DEFAULT_SPACE;
+  });
+  const [insights, setInsights] = useState<Insights | null>(null);
+  const [thinking, setThinking] = useState(false);
+  const [batchText, setBatchText] = useState(() => space.batch_sizes.join(","));
+  const setSpaceField = (patch: Partial<SearchSpace>) => setSpace((s) => ({ ...s, ...patch }));
 
 
   const start = async () => {
     setError("");
     setTrials([]);
-    setSuggestion("");
+    setInsights(null);
     try {
       const r = await request("/tuning/studies", {
         method: "POST",
-        body: JSON.stringify({ model_id: modelId, n_trials: nTrials }),
+        body: JSON.stringify({
+          model_id: modelId,
+          n_trials: nTrials,
+          dataset,
+          search_space: space,
+        }),
       });
       setExpected(nTrials);
       setStudyId(r.id);
@@ -127,16 +152,22 @@ export default function TuningStudio() {
   }, [studyId, expected]);
 
 
-  const getSuggestion = async () => {
+  const getInsights = async () => {
+    setError("");
+    setThinking(true);
     try {
-      const r = await request("/suggestions", {
-        method: "POST",
-        body: JSON.stringify({ study_id: studyId }),
-      });
-      setSuggestion(r.suggestion);
+      const r: Insights = await request(`/insights/studies/${studyId}`, { method: "POST" });
+      setInsights(r);
     } catch (e: any) {
       setError(e.message);
     }
+    setThinking(false);
+  };
+
+  const useSpace = (s: SearchSpace) => {
+    setSpace(s);
+    setBatchText(s.batch_sizes.join(","));
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
 
@@ -160,7 +191,8 @@ export default function TuningStudio() {
         </h2>
         <p className="mt-2 max-w-2xl text-slate-500">
           Search for the best learning rate, batch size and weight decay
-          automatically, then ask for a recommendation.
+          automatically on any dataset, then ask Mistral and Llama to read the
+          trial log and suggest a better search space.
         </p>
       </header>
 
@@ -172,6 +204,40 @@ export default function TuningStudio() {
             Each trial fine-tunes the model with a different set of
             hyperparameters. More trials take longer.
           </p>
+        </div>
+        <div className="border-b border-slate-100 px-6 py-5">
+          <DatasetPicker value={dataset} onChange={setDataset} />
+        </div>
+        <div className="grid grid-cols-2 gap-4 border-b border-slate-100 px-6 py-5 sm:grid-cols-6">
+          <Field label="LR min">
+            <input type="number" step="any" className={inputCls} value={space.lr_min}
+              onChange={(e) => setSpaceField({ lr_min: +e.target.value })} />
+          </Field>
+          <Field label="LR max">
+            <input type="number" step="any" className={inputCls} value={space.lr_max}
+              onChange={(e) => setSpaceField({ lr_max: +e.target.value })} />
+          </Field>
+          <Field label="Batch sizes">
+            <input className={inputCls} value={batchText} placeholder="16,32"
+              onChange={(e) => {
+                setBatchText(e.target.value);
+                setSpaceField({
+                  batch_sizes: e.target.value.split(",").map((x) => +x.trim()).filter((x) => x > 0),
+                });
+              }} />
+          </Field>
+          <Field label="WD min">
+            <input type="number" step="any" className={inputCls} value={space.wd_min}
+              onChange={(e) => setSpaceField({ wd_min: +e.target.value })} />
+          </Field>
+          <Field label="WD max">
+            <input type="number" step="any" className={inputCls} value={space.wd_max}
+              onChange={(e) => setSpaceField({ wd_max: +e.target.value })} />
+          </Field>
+          <Field label="Epochs">
+            <input type="number" className={inputCls} value={space.epochs}
+              onChange={(e) => setSpaceField({ epochs: +e.target.value })} />
+          </Field>
         </div>
         <div className="flex flex-wrap items-end gap-4 px-6 py-5">
           <div className="w-32">
@@ -202,8 +268,9 @@ export default function TuningStudio() {
           {studyId && (
             <button
               className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-              onClick={getSuggestion}>
-              Get suggestion
+              disabled={thinking}
+              onClick={getInsights}>
+              {thinking ? "Asking the LLMs..." : "Get AI insights"}
             </button>
           )}
         </div>
@@ -230,11 +297,8 @@ export default function TuningStudio() {
       )}
 
 
-      {suggestion && (
-        <section className="rounded-2xl border border-amber-200 bg-amber-50/70 p-6">
-          <h3 className="font-semibold text-slate-900">Suggestion</h3>
-          <p className="mt-2 text-slate-700">{suggestion}</p>
-        </section>
+      {insights && (
+        <InsightsPanel data={insights} onUseSpace={useSpace} onClose={() => setInsights(null)} />
       )}
 
 
