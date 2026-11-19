@@ -3,6 +3,7 @@ import { request } from "../api";
 
 
 type Model = { id: number; hub_id: string; status: string };
+type Pushed = { repo_id: string; url: string; last_modified: string; versions: string[] };
 
 
 const POPULAR = [
@@ -18,6 +19,8 @@ export default function ModelHub() {
   const [models, setModels] = useState<Model[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [pushed, setPushed] = useState<Pushed[]>([]);
+  const [hubEnabled, setHubEnabled] = useState<boolean | null>(null);
 
 
   const load = () => {
@@ -27,16 +30,22 @@ export default function ModelHub() {
   };
   useEffect(() => {
     load();
+    request("/hub/models")
+      .then((r) => {
+        setHubEnabled(r.enabled);
+        setPushed(r.models);
+      })
+      .catch(() => setHubEnabled(false));
   }, []);
 
 
-  const importModel = async () => {
+  const importModel = async (hubId: string = name) => {
     setError("");
     setLoading(true);
     try {
       await request("/models/import", {
         method: "POST",
-        body: JSON.stringify({ hub_id: name }),
+        body: JSON.stringify({ hub_id: hubId }),
       });
       await load();
     } catch (e: any) {
@@ -82,7 +91,7 @@ export default function ModelHub() {
               />
               <button
                 className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
-                onClick={importModel}
+                onClick={() => importModel()}
                 disabled={loading}>
                 {loading ? "Importing..." : "Import model"}
               </button>
@@ -166,6 +175,49 @@ export default function ModelHub() {
               </tbody>
             </table>
           </div>
+        )}
+      </section>
+
+
+      <section className="rounded-2xl border border-slate-200/70 bg-white shadow-sm">
+        <div className="border-b border-slate-100 px-6 py-5">
+          <h3 className="font-semibold text-slate-900">Saved on the Hugging Face Hub</h3>
+          <p className="mt-1 text-sm text-slate-500">
+            Fine-tuned models pushed by HFAIO. Each run is a tagged version (job-N), so
+            nothing is lost when the server restarts. Import one to evaluate or keep training it.
+          </p>
+        </div>
+        {hubEnabled === false ? (
+          <p className="px-6 py-8 text-center text-sm text-slate-500">
+            Hub storage is off. Set HF_TOKEN (write access) on the backend to enable it.
+          </p>
+        ) : pushed.length === 0 ? (
+          <p className="px-6 py-8 text-center text-sm text-slate-500">
+            {hubEnabled === null ? "Loading..." : "No models pushed yet. Finish a run on the Experiments page."}
+          </p>
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {pushed.map((m) => (
+              <li key={m.repo_id} className="flex flex-wrap items-center justify-between gap-3 px-6 py-4">
+                <div>
+                  <a href={m.url} target="_blank" rel="noreferrer"
+                    className="font-mono text-sm font-medium text-indigo-600 hover:underline">
+                    {m.repo_id}
+                  </a>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {m.versions.length} {m.versions.length === 1 ? "version" : "versions"}
+                    {m.versions.length > 0 && `: ${m.versions.slice(0, 5).join(", ")}`}
+                  </p>
+                </div>
+                <button
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                  disabled={loading}
+                  onClick={() => importModel(m.repo_id)}>
+                  Import latest
+                </button>
+              </li>
+            ))}
+          </ul>
         )}
       </section>
     </div>
