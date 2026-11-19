@@ -1,79 +1,80 @@
 import type { Insights, SearchSpace } from "../types";
+import { Button } from "./ui";
 
 const fmt = (s: SearchSpace) =>
-  `lr ${s.lr_min.toExponential(1)}-${s.lr_max.toExponential(1)}, batch ${s.batch_sizes.join("/")}, ` +
-  `weight decay ${s.wd_min}-${s.wd_max}, ${s.epochs} epochs`;
+  `learning rate ${s.lr_min.toExponential(1)} to ${s.lr_max.toExponential(1)}, ` +
+  `batch ${s.batch_sizes.join(" or ")}, weight decay ${s.wd_min} to ${s.wd_max}, ${s.epochs} epochs`;
 
-function shortName(model: string) {
-  return model.split("/").pop() ?? model;
-}
+const shortName = (model: string) => model.split("/").pop() ?? model;
 
-/** Shows the LLM answers side by side, the rule-based analysis, and the
- *  recommended search space with a button to use it for the next study. */
-export default function InsightsPanel({ data, onUseSpace, onClose }: {
+/** LLM answers side by side, the rule-based check, and the recommended next search. */
+export default function InsightsPanel({ data, onUseSpace, onClose, title = "AI insights",
+                                        useLabel = "Use these ranges" }: {
   data: Insights;
   onUseSpace?: (space: SearchSpace) => void;
   onClose?: () => void;
+  title?: string;
+  useLabel?: string;
 }) {
   const answered = data.llm.filter((a) => a.ok);
   return (
-    <section className="rounded-2xl border border-amber-200 bg-amber-50/70 p-6">
-      <div className="flex items-start justify-between gap-4">
+    <section className="overflow-hidden rounded-2xl border border-rule bg-surface shadow-panel" aria-label={title}>
+      <div className="flex items-start justify-between gap-4 border-l-4 border-spruce px-6 pt-5 pb-4">
         <div>
-          <h3 className="font-semibold text-slate-900">AI insights</h3>
-          <p className="mt-1 text-xs text-slate-500">
+          <h2 className="text-[17px] font-semibold text-ink">{title}</h2>
+          <p className="mt-1 text-sm text-graphite">
             {data.source === "llm"
-              ? `From ${answered.map((a) => shortName(a.model)).join(" and ")} on the Hugging Face Inference API`
-              : "Rule-based analysis (no LLM answered; set HF_TOKEN on the backend to enable it)"}
+              ? `Written by ${answered.map((a) => shortName(a.model)).join(" and ")} from your results.`
+              : "From the built-in rules. No language model answered, so check HF_TOKEN and credits on the backend."}
           </p>
         </div>
         {onClose && (
-          <button onClick={onClose} aria-label="Close insights"
-            className="text-slate-400 transition hover:text-slate-600">x</button>
+          <button onClick={onClose} aria-label="Close" className="text-mist transition-colors hover:text-ink">✕</button>
         )}
       </div>
 
-      <div className={"mt-4 grid gap-4 " + (data.llm.length > 1 ? "md:grid-cols-2" : "")}>
-        {data.llm.map((a) => (
-          <div key={a.model} className="rounded-xl bg-white p-4 shadow-sm">
-            <p className="font-mono text-xs font-semibold text-indigo-700">{shortName(a.model)}</p>
-            {a.ok ? (
-              <>
-                <p className="mt-2 text-sm text-slate-700">{a.summary}</p>
-                {!!a.recommendations?.length && (
-                  <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-600">
-                    {a.recommendations.map((r, i) => <li key={i}>{r}</li>)}
-                  </ul>
-                )}
-                {a.search_space && (
-                  <p className="mt-3 text-xs text-slate-500">Suggests: {fmt(a.search_space)}</p>
-                )}
-              </>
-            ) : (
-              <p className="mt-2 text-sm text-slate-500">Unavailable: {a.error}</p>
-            )}
-          </div>
-        ))}
+      {data.llm.length > 0 && (
+        <div className={"grid gap-px border-t border-hairline bg-hairline " + (data.llm.length > 1 ? "md:grid-cols-2" : "")}>
+          {data.llm.map((a) => (
+            <article key={a.model} className="bg-surface px-6 py-5">
+              <p className="font-mono text-[12px] text-spruce">{shortName(a.model)}</p>
+              {a.ok ? (
+                <>
+                  <p className="mt-2 text-[15px] leading-relaxed text-ink">{a.summary}</p>
+                  {!!a.recommendations?.length && (
+                    <ul className="mt-3 space-y-1.5 text-[14px] text-graphite">
+                      {a.recommendations.map((r, i) => (
+                        <li key={i} className="flex gap-2"><span className="text-spruce">–</span>{r}</li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              ) : (
+                <p className="mt-2 text-sm text-mist">Did not answer: {a.error}</p>
+              )}
+            </article>
+          ))}
+        </div>
+      )}
+
+      <div className="border-t border-hairline bg-raised px-6 py-5">
+        <p className="text-[13px] font-medium text-graphite">Rule-based check</p>
+        <p className="mt-1 text-[15px] text-ink">{data.rule_based.summary}</p>
+        {data.rule_based.recommendations.length > 0 && (
+          <ul className="mt-2 space-y-1 text-[14px] text-graphite">
+            {data.rule_based.recommendations.map((r, i) => (
+              <li key={i} className="flex gap-2"><span className="text-spruce">–</span>{r}</li>
+            ))}
+          </ul>
+        )}
       </div>
 
-      <div className="mt-4 rounded-xl bg-white/70 p-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Rule-based check</p>
-        <p className="mt-1 text-sm text-slate-700">{data.rule_based.summary}</p>
-        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-600">
-          {data.rule_based.recommendations.map((r, i) => <li key={i}>{r}</li>)}
-        </ul>
-      </div>
-
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-slate-700">
-          <span className="font-semibold">Recommended next search:</span> {fmt(data.recommended_search_space)}
+      <div className="flex flex-wrap items-center justify-between gap-4 border-t border-hairline px-6 py-4">
+        <p className="text-[14px] text-ink">
+          <span className="font-medium">Next search:</span>{" "}
+          <span className="num text-graphite">{fmt(data.recommended_search_space)}</span>
         </p>
-        {onUseSpace && (
-          <button onClick={() => onUseSpace(data.recommended_search_space)}
-            className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500">
-            Use these ranges
-          </button>
-        )}
+        {onUseSpace && <Button onClick={() => onUseSpace(data.recommended_search_space)}>{useLabel}</Button>}
       </div>
     </section>
   );

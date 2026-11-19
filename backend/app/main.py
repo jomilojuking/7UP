@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.schemas import (
-    ABTestRequest, ABTestResult, DatasetInspect, FinetuneJob, FinetuneRequest, ModelImport,
+    ABTestRequest, ABTestResult, DatasetInspect, DatasetSpec, FinetuneJob, FinetuneRequest, ModelImport,
     ModelInfo, StudyRequest, SuggestRequest, Trial,
 )
 from app.security import check_capacity, heavy_guard, write_guard
@@ -95,6 +95,16 @@ def inspect_dataset(body: DatasetInspect):
     """Splits and columns of any Hugging Face dataset, to pick text/label columns."""
     try:
         return data_service.inspect_hub(body.hub_id, body.config)
+    except data_service.DatasetError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/datasets/profile", dependencies=write_guard)
+def profile_dataset(spec: DatasetSpec):
+    """Class balance, text lengths, frequent words and examples for the dataset visuals."""
+    _check_dataset(spec)
+    try:
+        return data_service.profile(spec)
     except data_service.DatasetError as e:
         raise HTTPException(400, str(e))
 
