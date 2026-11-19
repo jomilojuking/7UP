@@ -71,7 +71,7 @@ jobs:
         run: |
           TORCH_VERSION="$(grep -E '^torch==' backend/requirements.txt | cut -d= -f3)"
           pip install --index-url https://download.pytorch.org/whl/cpu "torch==${TORCH_VERSION}"
-          pip install -r backend/requirements.txt pytest pytest-cov httpx
+          pip install -r backend/requirements.txt pytest pytest-cov httpx fakeredis
       - name: Pytest
         if: steps.tests.outputs.present == 'true'
         working-directory: backend

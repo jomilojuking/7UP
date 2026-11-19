@@ -8,3 +8,6 @@ optuna.db
 mlflow.db
 mlruns/
 .DS_Store
+uploads/
+.pytest_cache/
+.ruff_cache/
