@@ -1,1 +1,86 @@
 @import "tailwindcss";
+
+/* HFAIO design tokens: a calm, instrument-like palette.
+   One accent (spruce) for actions and the primary data series, brass as the
+   second series, everything else in mineral neutrals. */
+@theme {
+  --font-sans: "Instrument Sans Variable", "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-canvas: #eef1ef;
+  --color-surface: #ffffff;
+  --color-raised: #f6f8f7;
+  --color-ink: #15201c;
+  --color-graphite: #56635e;
+  --color-mist: #8a9792;
+  --color-rule: #d6ddd9;
+  --color-hairline: #e6ebe8;
+
+  --color-spruce: #1e5b4b;
+  --color-spruce-deep: #154236;
+  --color-spruce-soft: #dde9e4;
+  --color-brass: #b08535;
+  --color-brass-soft: #f3ead6;
+  --color-slateblue: #4f6d8a;
+  --color-brick: #a3412f;
+  --color-brick-soft: #f5e3df;
+
+  --shadow-panel: 0 1px 0 rgb(21 32 28 / 0.04), 0 8px 24px -16px rgb(21 32 28 / 0.18);
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+html {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+/* Condensed display cut of Instrument Sans for page titles. */
+.display {
+  font-stretch: 80%;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.02;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-spruce);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--color-spruce-soft);
+}
+
+/* The one orchestrated motion: dataset bars grow in when a profile loads. */
+@keyframes grow-x {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+.grow-x {
+  transform-origin: left center;
+  animation: grow-x 900ms var(--ease-out-soft) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .grow-x { animation: none; }
+  * { transition-duration: 0ms !important; }
+}
+
+/* Plotly draws a white halo behind parallel-coordinate labels; it looks blurry on our canvas. */
+.js-plotly-plot .parcoords text {
+  text-shadow: none !important;
+}

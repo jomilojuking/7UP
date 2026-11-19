@@ -197,3 +197,107 @@ def classification_metrics(preds, labels, num_labels: int) -> dict:
         "recall": float(r),
         "f1": float(f1),
     }
+
+
+# ---------------------------------------------------------------- profile
+STOPWORDS = set("""
+a an and are as at be been but by for from has have he her his i if in into is it its
+of on or our she so than that the their them then there these they this to was we were
+what when which who will with you your not no n't 's 're 've 'll 'd -- - , . ; : ! ? ' "
+do does did just all can would could should about more most out up very one also
+""".split())
+PROFILE_TRAIN = int(os.getenv("PROFILE_TRAIN_ROWS", 5000))
+PROFILE_EVAL = int(os.getenv("PROFILE_EVAL_ROWS", 2000))
+_profile_cache: dict[str, dict] = {}
+
+
+def _words(text: str) -> list[str]:
+    import re
+    return [w for w in re.findall(r"[a-z][a-z']+", text.lower())
+            if w not in STOPWORDS and len(w) > 2]
+
+
+def profile(spec: DatasetSpec) -> dict:
+    """Summary statistics and samples used by the dataset visuals in the UI.
+
+    Works on a random sample (PROFILE_TRAIN_ROWS / PROFILE_EVAL_ROWS) so it
+    stays fast on big datasets; the sample sizes are returned with the result.
+    """
+    import json
+    from collections import Counter
+
+    key = json.dumps(spec.model_dump(), sort_keys=True)
+    if key in _profile_cache:
+        return _profile_cache[key]
+
+    data = load_splits(spec, PROFILE_TRAIN, PROFILE_EVAL)
+    names = data.label_names
+    n = len(names)
+
+    def counts(ds):
+        c = Counter(ds["labels"])
+        return [int(c.get(i, 0)) for i in range(n)]
+
+    train_text, train_labels = data.train["text"], data.train["labels"]
+    lengths = [len(t.split()) for t in train_text]
+    srt = sorted(lengths)
+
+    def pct(p):
+        return float(srt[min(len(srt) - 1, int(p * (len(srt) - 1)))]) if srt else 0.0
+
+    # Histogram of words per example, clipped at the 99th percentile so one
+    # very long review does not flatten the chart.
+    top = max(1, int(pct(0.99)))
+    n_bins = min(30, top)
+    width = max(1, -(-top // n_bins))
+    edges = list(range(0, top + width, width))
+    hist = [0] * (len(edges) - 1)
+    for length in lengths:
+        hist[min(len(hist) - 1, length // width)] += 1
+
+    per_label_len = []
+    word_counts = [Counter() for _ in range(n)]
+    examples: list[list[str]] = [[] for _ in range(n)]
+    for text, lab in zip(train_text, train_labels):
+        word_counts[lab].update(_words(text))
+        if len(examples[lab]) < 3 and 30 <= len(text) <= 220:
+            examples[lab].append(text.strip())
+    for i in range(n):
+        ls = [length for length, lab in zip(lengths, train_labels) if lab == i]
+        per_label_len.append(round(sum(ls) / len(ls), 1) if ls else 0.0)
+
+    # Words that are frequent in a class *and* more frequent there than overall.
+    overall = Counter()
+    for wc in word_counts:
+        overall.update(wc)
+    total_overall = sum(overall.values()) or 1
+    top_words = []
+    for i in range(n):
+        total_i = sum(word_counts[i].values()) or 1
+        scored = [
+            (w, c, (c / total_i) / (overall[w] / total_overall))
+            for w, c in word_counts[i].items() if c >= 3
+        ]
+        scored.sort(key=lambda x: x[1] * min(x[2], 4.0), reverse=True)
+        top_words.append([{"word": w, "count": c} for w, c, _ in scored[:10]])
+
+    result = {
+        "dataset": spec.label(),
+        "label_names": names,
+        "eval_source": data.eval_source,
+        "train": {"rows": len(data.train), "counts": counts(data.train)},
+        "eval": {"rows": len(data.eval), "counts": counts(data.eval)},
+        "length": {
+            "edges": edges, "counts": hist,
+            "mean": round(sum(lengths) / len(lengths), 1) if lengths else 0.0,
+            "median": pct(0.5), "p95": pct(0.95), "max": float(srt[-1]) if srt else 0.0,
+            "mean_by_label": per_label_len,
+        },
+        "top_words": top_words,
+        "examples": examples,
+        "sampled": {"train_limit": PROFILE_TRAIN, "eval_limit": PROFILE_EVAL},
+    }
+    if len(_profile_cache) > 32:
+        _profile_cache.clear()
+    _profile_cache[key] = result
+    return result

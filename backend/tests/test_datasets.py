@@ -77,3 +77,24 @@ def test_multiclass_metrics_use_macro_average():
     m = data.classification_metrics([0, 1, 2, 2], [0, 1, 2, 1], num_labels=3)
     assert m["accuracy"] == 0.75
     assert 0 < m["f1"] < 1
+
+
+def test_profile_endpoint(client):
+    uid = _upload(client).json()["upload_id"]
+    spec = {"upload_id": uid, "text_column": "review", "label_column": "sentiment"}
+    r = client.post("/datasets/profile", json=spec)
+    assert r.status_code == 200, r.text
+    p = r.json()
+    assert p["label_names"] == ["neg", "pos"]
+    assert sum(p["train"]["counts"]) == p["train"]["rows"]
+    assert sum(p["length"]["counts"]) == p["train"]["rows"]
+    assert len(p["length"]["edges"]) == len(p["length"]["counts"]) + 1
+    words = [w["word"] for w in p["top_words"][1]]
+    assert "great" in words and "terrible" not in words
+    assert all("great" in e for e in p["examples"][1])
+
+
+def test_profile_unknown_upload(client):
+    r = client.post("/datasets/profile",
+                    json={"upload_id": 9, "text_column": "a", "label_column": "b"})
+    assert r.status_code == 404

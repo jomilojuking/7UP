@@ -1,18 +1,16 @@
 import { useEffect, useState } from "react";
 import { request } from "../api";
-
+import { Button, Empty, Mono, Notice, PageHeader, Panel, Status } from "../components/ui";
 
 type Model = { id: number; hub_id: string; status: string };
 type Pushed = { repo_id: string; url: string; last_modified: string; versions: string[] };
 
-
 const POPULAR = [
-  "distilbert-base-uncased",
-  "bert-base-uncased",
-  "roberta-base",
-  "albert-base-v2",
+  { id: "distilbert-base-uncased", note: "66M parameters, fastest" },
+  { id: "bert-base-uncased", note: "110M, the classic baseline" },
+  { id: "roberta-base", note: "125M, strongest on sentiment" },
+  { id: "albert-base-v2", note: "12M, smallest download" },
 ];
-
 
 export default function ModelHub() {
   const [name, setName] = useState("distilbert-base-uncased");
@@ -22,31 +20,24 @@ export default function ModelHub() {
   const [pushed, setPushed] = useState<Pushed[]>([]);
   const [hubEnabled, setHubEnabled] = useState<boolean | null>(null);
 
-
   const load = () => {
-    request("/models")
-      .then(setModels)
-      .catch((e) => setError(e.message));
+    request("/models").then((r) => setModels(Array.isArray(r) ? r : [])).catch((e) => setError(e.message));
   };
   useEffect(() => {
     load();
     request("/hub/models")
       .then((r) => {
-        setHubEnabled(r.enabled);
-        setPushed(r.models);
+        setHubEnabled(!!r?.enabled);
+        setPushed(Array.isArray(r?.models) ? r.models : []);
       })
       .catch(() => setHubEnabled(false));
   }, []);
-
 
   const importModel = async (hubId: string = name) => {
     setError("");
     setLoading(true);
     try {
-      await request("/models/import", {
-        method: "POST",
-        body: JSON.stringify({ hub_id: hubId }),
-      });
+      await request("/models/import", { method: "POST", body: JSON.stringify({ hub_id: hubId }) });
       await load();
     } catch (e: any) {
       setError(e.message);
@@ -54,172 +45,99 @@ export default function ModelHub() {
     setLoading(false);
   };
 
-
   return (
-    <div className="space-y-6">
-      <header>
-        <h2 className="text-3xl font-bold tracking-tight text-slate-900">
-          Model Hub
-        </h2>
-        <p className="mt-2 max-w-2xl text-slate-500">
-          Pull a pretrained model from the Hugging Face Hub to use as the
-          starting point for tuning and experiments.
-        </p>
-      </header>
+    <div className="space-y-8">
+      <PageHeader title="Models">
+        Bring in a pretrained model from the Hugging Face Hub. It becomes the starting point
+        for fine-tuning runs and tuning studies.
+      </PageHeader>
 
-
-      <section className="rounded-2xl border border-slate-200/70 bg-white shadow-sm">
-        <div className="border-b border-slate-100 px-6 py-5">
-          <h3 className="font-semibold text-slate-900">Import a model</h3>
-          <p className="mt-1 text-sm text-slate-500">
-            Paste any Hub model id, or pick a popular one below.
-          </p>
+      <Panel title="Import a model" description="Any text model on the Hub works. Paste its ID or start from a common choice.">
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <input
+            aria-label="Hub model ID"
+            className="w-full flex-1 rounded-lg border border-rule bg-surface px-3 py-2 font-mono text-[14px] text-ink outline-none transition-colors hover:border-mist focus:border-spruce focus:ring-3 focus:ring-spruce-soft"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !loading) importModel(); }}
+          />
+          <Button onClick={() => importModel()} disabled={loading || !name.trim()}>
+            {loading ? "Importing…" : "Import model"}
+          </Button>
         </div>
-        <div className="space-y-4 px-6 py-5">
-          <div>
-            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Hub model id
-            </span>
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <input
-                className="w-full flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 font-mono text-sm text-slate-900 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-100"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !loading) importModel();
-                }}
-              />
-              <button
-                className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
-                onClick={() => importModel()}
-                disabled={loading}>
-                {loading ? "Importing..." : "Import model"}
-              </button>
-            </div>
-          </div>
-
-
-          <div className="flex flex-wrap gap-2">
-            {POPULAR.map((p) => (
-              <button
-                key={p}
-                onClick={() => setName(p)}
-                className={
-                  "rounded-full border px-3 py-1 font-mono text-xs transition " +
-                  (name === p
-                    ? "border-indigo-300 bg-indigo-50 text-indigo-700"
-                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50")
-                }>
-                {p}
-              </button>
-            ))}
-          </div>
-
-
-          {error && (
-            <div className="flex items-start justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-              <span>{error}</span>
-              <button
-                className="text-rose-400 transition hover:text-rose-600"
-                onClick={() => setError("")}
-                aria-label="Dismiss error">
-                x
-              </button>
-            </div>
-          )}
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          {POPULAR.map((p) => (
+            <button key={p.id} type="button" onClick={() => setName(p.id)}
+              className={"rounded-lg border px-3 py-2.5 text-left transition-colors " +
+                (name === p.id ? "border-spruce bg-spruce-soft/60" : "border-hairline bg-raised hover:border-rule")}>
+              <span className="block font-mono text-[13px] text-ink">{p.id}</span>
+              <span className="mt-0.5 block text-xs text-graphite">{p.note}</span>
+            </button>
+          ))}
         </div>
-      </section>
+        {error && <div className="mt-4"><Notice onClose={() => setError("")}>{error}</Notice></div>}
+      </Panel>
 
-
-      <section className="rounded-2xl border border-slate-200/70 bg-white shadow-sm">
-        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
-          <h3 className="font-semibold text-slate-900">Your models</h3>
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
-            {models.length} {models.length === 1 ? "model" : "models"}
-          </span>
-        </div>
-
-
+      <Panel title="Ready to train" flush
+        actions={<span className="num text-sm text-graphite">{models.length} {models.length === 1 ? "model" : "models"}</span>}>
         {models.length === 0 ? (
-          <div className="px-6 py-14 text-center">
-            <p className="font-semibold text-slate-900">No models yet</p>
-            <p className="mt-1 text-sm text-slate-500">
-              Import your first model above to get started.
-            </p>
+          <div className="px-6 pb-6">
+            <Empty title="No models yet">Import one above. Its ID number is what you enter on the Experiments and Tuning Studio pages.</Empty>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-6 py-3 font-semibold">ID</th>
-                  <th className="px-3 font-semibold">Model</th>
-                  <th className="px-3 font-semibold">Status</th>
+          <table className="w-full text-left text-[15px]">
+            <thead>
+              <tr className="border-y border-hairline bg-raised text-[13px] text-graphite">
+                <th className="px-6 py-2.5 font-medium">ID</th>
+                <th className="px-3 py-2.5 font-medium">Model</th>
+                <th className="px-6 py-2.5 text-right font-medium">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-hairline">
+              {models.map((m) => (
+                <tr key={m.id}>
+                  <td className="num px-6 py-3.5 font-semibold text-ink">{m.id}</td>
+                  <td className="px-3"><Mono>{m.hub_id}</Mono></td>
+                  <td className="px-6 text-right"><Status value={m.status} /></td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {models.map((m) => (
-                  <tr key={m.id} className="transition hover:bg-slate-50/70">
-                    <td className="px-6 py-3 font-medium text-slate-900">
-                      {m.id}
-                    </td>
-                    <td className="px-3 font-mono text-slate-700">{m.hub_id}</td>
-                    <td className="px-3">
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">
-                        <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                        {m.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              ))}
+            </tbody>
+          </table>
         )}
-      </section>
+      </Panel>
 
-
-      <section className="rounded-2xl border border-slate-200/70 bg-white shadow-sm">
-        <div className="border-b border-slate-100 px-6 py-5">
-          <h3 className="font-semibold text-slate-900">Saved on the Hugging Face Hub</h3>
-          <p className="mt-1 text-sm text-slate-500">
-            Fine-tuned models pushed by HFAIO. Each run is a tagged version (job-N), so
-            nothing is lost when the server restarts. Import one to evaluate or keep training it.
-          </p>
-        </div>
+      <Panel title="Saved on the Hugging Face Hub" flush
+        description="Every finished run is pushed as its own version, tagged job-N, so nothing is lost when the server restarts.">
         {hubEnabled === false ? (
-          <p className="px-6 py-8 text-center text-sm text-slate-500">
-            Hub storage is off. Set HF_TOKEN (write access) on the backend to enable it.
+          <p className="px-6 pb-6 text-sm text-graphite">
+            Hub storage is off. Add an HF_TOKEN with write access to the backend to turn it on.
           </p>
         ) : pushed.length === 0 ? (
-          <p className="px-6 py-8 text-center text-sm text-slate-500">
-            {hubEnabled === null ? "Loading..." : "No models pushed yet. Finish a run on the Experiments page."}
+          <p className="px-6 pb-6 text-sm text-graphite">
+            {hubEnabled === null ? "Checking the Hub…" : "Nothing pushed yet. Finished runs from the Experiments page appear here."}
           </p>
         ) : (
-          <ul className="divide-y divide-slate-100">
+          <ul className="divide-y divide-hairline border-t border-hairline">
             {pushed.map((m) => (
               <li key={m.repo_id} className="flex flex-wrap items-center justify-between gap-3 px-6 py-4">
-                <div>
+                <div className="min-w-0">
                   <a href={m.url} target="_blank" rel="noreferrer"
-                    className="font-mono text-sm font-medium text-indigo-600 hover:underline">
-                    {m.repo_id}
-                  </a>
-                  <p className="mt-1 text-xs text-slate-500">
-                    {m.versions.length} {m.versions.length === 1 ? "version" : "versions"}
-                    {m.versions.length > 0 && `: ${m.versions.slice(0, 5).join(", ")}`}
-                  </p>
+                    className="font-mono text-[14px] text-spruce underline-offset-2 hover:underline">{m.repo_id}</a>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {m.versions.slice(0, 6).map((v) => (
+                      <span key={v} className="rounded-md bg-raised px-2 py-0.5 font-mono text-[12px] text-graphite">{v}</span>
+                    ))}
+                    {m.versions.length === 0 && <span className="text-xs text-mist">No tagged versions</span>}
+                  </div>
                 </div>
-                <button
-                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-                  disabled={loading}
-                  onClick={() => importModel(m.repo_id)}>
+                <Button variant="secondary" size="sm" disabled={loading} onClick={() => importModel(m.repo_id)}>
                   Import latest
-                </button>
+                </Button>
               </li>
             ))}
           </ul>
         )}
-      </section>
+      </Panel>
     </div>
   );
 }

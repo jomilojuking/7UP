@@ -2,13 +2,13 @@ import { useEffect, useState } from "react";
 import Plotly from "plotly.js-dist-min";
 import createPlotlyComponent from "react-plotly.js/factory";
 import { request } from "../api";
+import { baseLayout, C, plotConfig } from "../chart";
 import DatasetPicker from "../components/DatasetPicker";
 import InsightsPanel from "../components/InsightsPanel";
-import { DEFAULT_SPACE, SPACE_KEY, SST2, type DatasetSpec, type Insights, type SearchSpace } from "../types";
-
+import { Button, Empty, Field, inputCls, Notice, PageHeader, Panel, Readout, Section, Status } from "../components/ui";
+import { DEFAULT_SPACE, loadDataset, SPACE_KEY, type DatasetSpec, type Insights, type SearchSpace } from "../types";
 
 const Plot = createPlotlyComponent(Plotly);
-
 
 type Trial = {
   number: number;
@@ -19,106 +19,44 @@ type Trial = {
   accuracy: number | null;
 };
 
-
-const inputCls =
-  "w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm " +
-  "text-slate-900 outline-none transition focus:border-indigo-400 focus:bg-white " +
-  "focus:ring-4 focus:ring-indigo-100";
-
-
-const chartFont = { family: "Inter, system-ui, sans-serif", color: "#475569" };
-
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="block">
-      <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-        {label}
-      </span>
-      {children}
-    </label>
-  );
+function initialSpace(): SearchSpace {
+  // "Tune with these ranges" on the Experiments page lands here.
+  try {
+    const saved = localStorage.getItem(SPACE_KEY);
+    if (saved) {
+      localStorage.removeItem(SPACE_KEY);
+      return { ...DEFAULT_SPACE, ...JSON.parse(saved) };
+    }
+  } catch {
+    // ignore unreadable storage
+  }
+  return DEFAULT_SPACE;
 }
-
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-slate-200/70 bg-white p-5 shadow-sm">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-        {label}
-      </p>
-      <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">{value}</p>
-    </div>
-  );
-}
-
-
-function StateBadge({ state }: { state: string }) {
-  const styles: Record<string, string> = {
-    COMPLETE: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-    PRUNED: "bg-slate-100 text-slate-600 ring-slate-200",
-    RUNNING: "bg-amber-50 text-amber-700 ring-amber-200",
-    FAIL: "bg-rose-50 text-rose-700 ring-rose-200",
-  };
-  const cls = styles[state] ?? "bg-slate-100 text-slate-600 ring-slate-200";
-  return (
-    <span
-      className={
-        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset " +
-        cls
-      }>
-      <span
-        className={
-          "h-1.5 w-1.5 rounded-full bg-current " +
-          (state === "RUNNING" ? "animate-pulse" : "")
-        }
-      />
-      {state}
-    </span>
-  );
-}
-
 
 export default function TuningStudio() {
   const [modelId, setModelId] = useState(1);
-  const [nTrials, setNTrials] = useState(3);
+  const [nTrials, setNTrials] = useState(5);
   const [studyId, setStudyId] = useState<number | null>(null);
   const [expected, setExpected] = useState(0);
   const [trials, setTrials] = useState<Trial[]>([]);
   const [error, setError] = useState("");
-  const [dataset, setDataset] = useState<DatasetSpec>(SST2);
-  const [space, setSpace] = useState<SearchSpace>(() => {
-    // A run's "Use these ranges" on the Experiments page lands here.
-    try {
-      const saved = localStorage.getItem(SPACE_KEY);
-      if (saved) {
-        localStorage.removeItem(SPACE_KEY);
-        return { ...DEFAULT_SPACE, ...JSON.parse(saved) };
-      }
-    } catch {
-      // ignore unreadable storage
-    }
-    return DEFAULT_SPACE;
-  });
+  const [dataset, setDataset] = useState<DatasetSpec>(loadDataset);
+  const [space, setSpace] = useState<SearchSpace>(initialSpace);
+  const [batchText, setBatchText] = useState(() => space.batch_sizes.join(", "));
   const [insights, setInsights] = useState<Insights | null>(null);
   const [thinking, setThinking] = useState(false);
-  const [batchText, setBatchText] = useState(() => space.batch_sizes.join(","));
+  const [spaceNote, setSpaceNote] = useState("");
   const setSpaceField = (patch: Partial<SearchSpace>) => setSpace((s) => ({ ...s, ...patch }));
-
 
   const start = async () => {
     setError("");
     setTrials([]);
     setInsights(null);
+    setSpaceNote("");
     try {
       const r = await request("/tuning/studies", {
         method: "POST",
-        body: JSON.stringify({
-          model_id: modelId,
-          n_trials: nTrials,
-          dataset,
-          search_space: space,
-        }),
+        body: JSON.stringify({ model_id: modelId, n_trials: nTrials, dataset, search_space: space }),
       });
       setExpected(nTrials);
       setStudyId(r.id);
@@ -127,7 +65,6 @@ export default function TuningStudio() {
     }
   };
 
-
   useEffect(() => {
     if (!studyId) return;
     let stopped = false;
@@ -135,9 +72,7 @@ export default function TuningStudio() {
       try {
         const t: Trial[] = await request(`/tuning/studies/${studyId}/trials`);
         setTrials(t);
-        if (t.length >= expected && t.every((x) => x.state !== "RUNNING")) {
-          stopped = true;
-        }
+        if (t.length >= expected && t.every((x) => x.state !== "RUNNING")) stopped = true;
       } catch (e: any) {
         setError(e.message);
         stopped = true;
@@ -150,7 +85,6 @@ export default function TuningStudio() {
     }, 4000);
     return () => clearInterval(id);
   }, [studyId, expected]);
-
 
   const getInsights = async () => {
     setError("");
@@ -166,321 +100,192 @@ export default function TuningStudio() {
 
   const useSpace = (s: SearchSpace) => {
     setSpace(s);
-    setBatchText(s.batch_sizes.join(","));
+    setBatchText(s.batch_sizes.join(", "));
+    setSpaceNote("Search ranges updated from the insights. Start a new study to try them.");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
-
 
   const done = trials.filter((t) => t.state === "COMPLETE" && t.accuracy !== null);
   const pruned = trials.filter((t) => t.state === "PRUNED").length;
   let best = 0;
   const bestSoFar = trials.map((t) => {
-    if (t.state === "COMPLETE" && t.accuracy !== null) {
-      best = Math.max(best, t.accuracy);
-    }
+    if (t.state === "COMPLETE" && t.accuracy !== null) best = Math.max(best, t.accuracy);
     return best || null;
   });
-  const progress = expected > 0 ? Math.min(100, (trials.length / expected) * 100) : 0;
-
+  const bestTrial = done.slice().sort((a, b) => (b.accuracy ?? 0) - (a.accuracy ?? 0))[0];
+  const progress = expected > 0 ? Math.min(100, (trials.filter((t) => t.state !== "RUNNING").length / expected) * 100) : 0;
+  const running = studyId !== null && progress < 100;
 
   return (
-    <div className="space-y-6">
-      <header>
-        <h2 className="text-3xl font-bold tracking-tight text-slate-900">
-          Tuning Studio
-        </h2>
-        <p className="mt-2 max-w-2xl text-slate-500">
-          Search for the best learning rate, batch size and weight decay
-          automatically on any dataset, then ask Mistral and Llama to read the
-          trial log and suggest a better search space.
-        </p>
-      </header>
+    <div className="space-y-8">
+      <PageHeader title="Tuning Studio"
+        actions={studyId !== null && (
+          <Button variant="secondary" disabled={thinking || done.length === 0} onClick={getInsights}>
+            {thinking ? "Reading the trials…" : "Get AI insights"}
+          </Button>
+        )}>
+        Let Optuna search learning rate, batch size and weight decay for you, then have Mistral
+        and Llama read the trial log and propose a tighter search.
+      </PageHeader>
 
-
-      <section className="rounded-2xl border border-slate-200/70 bg-white shadow-sm">
-        <div className="border-b border-slate-100 px-6 py-5">
-          <h3 className="font-semibold text-slate-900">New study</h3>
-          <p className="mt-1 text-sm text-slate-500">
-            Each trial fine-tunes the model with a different set of
-            hyperparameters. More trials take longer.
-          </p>
-        </div>
-        <div className="border-b border-slate-100 px-6 py-5">
-          <DatasetPicker value={dataset} onChange={setDataset} />
-        </div>
-        <div className="grid grid-cols-2 gap-4 border-b border-slate-100 px-6 py-5 sm:grid-cols-6">
-          <Field label="LR min">
-            <input type="number" step="any" className={inputCls} value={space.lr_min}
-              onChange={(e) => setSpaceField({ lr_min: +e.target.value })} />
-          </Field>
-          <Field label="LR max">
-            <input type="number" step="any" className={inputCls} value={space.lr_max}
-              onChange={(e) => setSpaceField({ lr_max: +e.target.value })} />
-          </Field>
-          <Field label="Batch sizes">
-            <input className={inputCls} value={batchText} placeholder="16,32"
-              onChange={(e) => {
-                setBatchText(e.target.value);
-                setSpaceField({
-                  batch_sizes: e.target.value.split(",").map((x) => +x.trim()).filter((x) => x > 0),
-                });
-              }} />
-          </Field>
-          <Field label="WD min">
-            <input type="number" step="any" className={inputCls} value={space.wd_min}
-              onChange={(e) => setSpaceField({ wd_min: +e.target.value })} />
-          </Field>
-          <Field label="WD max">
-            <input type="number" step="any" className={inputCls} value={space.wd_max}
-              onChange={(e) => setSpaceField({ wd_max: +e.target.value })} />
-          </Field>
-          <Field label="Epochs">
-            <input type="number" className={inputCls} value={space.epochs}
-              onChange={(e) => setSpaceField({ epochs: +e.target.value })} />
-          </Field>
-        </div>
-        <div className="flex flex-wrap items-end gap-4 px-6 py-5">
-          <div className="w-32">
-            <Field label="Model id">
-              <input
-                type="number"
-                className={inputCls}
-                value={modelId}
-                onChange={(e) => setModelId(+e.target.value)}
-              />
+      <Panel title="New study" flush>
+        <Section className="border-t-0 pt-0">
+          <DatasetPicker value={dataset} onChange={setDataset} preview={false} />
+        </Section>
+        <Section>
+          <p className="mb-3 text-[15px] font-medium text-ink">Search ranges</p>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+            <Field label="Learning rate from">
+              <input type="number" step="any" className={inputCls + " num"} value={space.lr_min}
+                onChange={(e) => setSpaceField({ lr_min: +e.target.value })} />
+            </Field>
+            <Field label="Learning rate to">
+              <input type="number" step="any" className={inputCls + " num"} value={space.lr_max}
+                onChange={(e) => setSpaceField({ lr_max: +e.target.value })} />
+            </Field>
+            <Field label="Batch sizes">
+              <input className={inputCls + " num"} value={batchText} placeholder="16, 32"
+                onChange={(e) => {
+                  setBatchText(e.target.value);
+                  setSpaceField({ batch_sizes: e.target.value.split(",").map((x) => +x.trim()).filter((x) => x > 0) });
+                }} />
+            </Field>
+            <Field label="Weight decay from">
+              <input type="number" step="any" className={inputCls + " num"} value={space.wd_min}
+                onChange={(e) => setSpaceField({ wd_min: +e.target.value })} />
+            </Field>
+            <Field label="Weight decay to">
+              <input type="number" step="any" className={inputCls + " num"} value={space.wd_max}
+                onChange={(e) => setSpaceField({ wd_max: +e.target.value })} />
+            </Field>
+            <Field label="Epochs per trial">
+              <input type="number" className={inputCls + " num"} value={space.epochs}
+                onChange={(e) => setSpaceField({ epochs: +e.target.value })} />
             </Field>
           </div>
-          <div className="w-32">
-            <Field label="Trials">
-              <input
-                type="number"
-                className={inputCls}
-                value={nTrials}
-                onChange={(e) => setNTrials(+e.target.value)}
-              />
-            </Field>
-          </div>
-          <button
-            className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 active:scale-[0.99]"
-            onClick={start}>
-            Start study
-          </button>
-          {studyId && (
-            <button
-              className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-              disabled={thinking}
-              onClick={getInsights}>
-              {thinking ? "Asking the LLMs..." : "Get AI insights"}
-            </button>
-          )}
-        </div>
-        {studyId && expected > 0 && (
-          <div className="px-6 pb-5">
-            <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-              <div
-                className="h-full rounded-full bg-indigo-500 transition-all"
-                style={{ width: progress + "%" }}
-              />
+          {spaceNote && <div className="mt-4"><Notice tone="info" onClose={() => setSpaceNote("")}>{spaceNote}</Notice></div>}
+        </Section>
+        <Section className="flex flex-wrap items-end justify-between gap-4">
+          <div className="flex gap-4">
+            <div className="w-28">
+              <Field label="Model ID">
+                <input type="number" className={inputCls + " num"} value={modelId} onChange={(e) => setModelId(+e.target.value)} />
+              </Field>
             </div>
-            <p className="mt-2 text-xs text-slate-500">
-              {trials.length} of {expected} trials started
+            <div className="w-28">
+              <Field label="Trials">
+                <input type="number" className={inputCls + " num"} value={nTrials} onChange={(e) => setNTrials(+e.target.value)} />
+              </Field>
+            </div>
+          </div>
+          <Button onClick={start} disabled={running}>{running ? "Study running…" : "Start study"}</Button>
+        </Section>
+        {studyId !== null && expected > 0 && (
+          <div className="border-t border-hairline px-6 py-4">
+            <div className="h-1.5 overflow-hidden rounded-full bg-raised">
+              <div className="h-full rounded-full bg-spruce transition-[width] duration-700" style={{ width: progress + "%" }} />
+            </div>
+            <p className="num mt-2 text-[13px] text-graphite">
+              Study {studyId}: {trials.filter((t) => t.state !== "RUNNING").length} of {expected} trials finished
             </p>
           </div>
         )}
-      </section>
+      </Panel>
 
+      {error && <Notice onClose={() => setError("")}>{error}</Notice>}
 
-      {error && (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          {error}
-        </div>
+      {insights && <InsightsPanel data={insights} onUseSpace={useSpace} onClose={() => setInsights(null)} />}
+
+      {studyId === null && (
+        <Empty title="No study running">
+          Choose the ranges above and start a study. Each trial fine-tunes the model once, so
+          more trials take longer but search more thoroughly.
+        </Empty>
       )}
 
-
-      {insights && (
-        <InsightsPanel data={insights} onUseSpace={useSpace} onClose={() => setInsights(null)} />
+      {studyId !== null && trials.length === 0 && (
+        <Empty title="Waiting for the first trial">This page refreshes on its own every few seconds.</Empty>
       )}
-
-
-      {!studyId && (
-        <section className="rounded-2xl border border-dashed border-slate-300 bg-white/60 px-6 py-14 text-center">
-          <p className="font-semibold text-slate-900">No study running</p>
-          <p className="mx-auto mt-1 max-w-md text-sm text-slate-500">
-            Pick a model and the number of trials, then start a study to see
-            results here.
-          </p>
-        </section>
-      )}
-
-
-      {studyId && trials.length === 0 && (
-        <section className="rounded-2xl border border-slate-200/70 bg-white px-6 py-14 text-center shadow-sm">
-          <p className="font-semibold text-slate-900">
-            Waiting for the first trial...
-          </p>
-          <p className="mt-1 text-sm text-slate-500">
-            This page refreshes on its own every few seconds.
-          </p>
-        </section>
-      )}
-
 
       {trials.length > 0 && (
         <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <Stat label="Trials finished" value={String(done.length)} />
-            <Stat
-              label="Best accuracy"
-              value={done.length ? best.toFixed(3) : "-"}
-            />
-            <Stat label="Pruned trials" value={String(pruned)} />
-          </div>
+          <Readout items={[
+            { label: "Best accuracy", value: done.length ? best.toFixed(3) : "–",
+              note: bestTrial ? `trial ${bestTrial.number}, lr ${bestTrial.learning_rate.toExponential(1)}` : undefined },
+            { label: "Trials finished", value: done.length },
+            { label: "Stopped early", value: pruned, note: "weak trials cut by the pruner" },
+          ]} />
 
-
-          <section className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+          <Panel title="Search history" description="Each dot is one trial. The line is the best accuracy found so far.">
             <Plot
-              data={
-                [
-                  {
-                    x: trials.map((t) => t.number),
-                    y: trials.map((t) => t.accuracy),
-                    type: "scatter",
-                    mode: "markers",
-                    name: "Trial accuracy",
-                    marker: {
-                      size: 11,
-                      color: trials.map((t) =>
-                        t.state === "PRUNED" ? "#cbd5e1" : "#4f46e5"
-                      ),
-                    },
-                  },
-                  {
-                    x: trials.map((t) => t.number),
-                    y: bestSoFar,
-                    type: "scatter",
-                    mode: "lines",
-                    name: "Best so far",
-                    line: { color: "#10b981", width: 3 },
-                  },
-                ] as any
-              }
-              layout={
-                {
-                  title: { text: "Optimization history" },
-                  xaxis: { title: { text: "Trial" }, dtick: 1 },
-                  yaxis: { title: { text: "Accuracy" } },
-                  height: 400,
-                  autosize: true,
-                  font: chartFont,
-                  paper_bgcolor: "rgba(0,0,0,0)",
-                  plot_bgcolor: "rgba(0,0,0,0)",
-                  margin: { t: 50, r: 20, b: 50, l: 60 },
-                  legend: { orientation: "h", y: -0.2 },
-                } as any
-              }
-              useResizeHandler
-              style={{ width: "100%" }}
+              data={[
+                { x: trials.map((t) => t.number), y: trials.map((t) => t.accuracy), type: "scatter", mode: "markers",
+                  name: "Trial", marker: { size: 11, color: trials.map((t) => (t.state === "PRUNED" ? C.rule : C.spruce)),
+                    line: { color: "#fff", width: 1.5 } },
+                  hovertemplate: "Trial %{x}<br>accuracy %{y:.3f}<extra></extra>" },
+                { x: trials.map((t) => t.number), y: bestSoFar, type: "scatter", mode: "lines", name: "Best so far",
+                  line: { color: C.brass, width: 2.5, shape: "hv" }, hoverinfo: "skip" },
+              ] as any}
+              layout={baseLayout({ height: 340, margin: { t: 16, r: 16, b: 48, l: 64 },
+                xaxis: { title: { text: "Trial", font: { size: 12 } }, dtick: 1, range: [-0.5, Math.max(expected, trials.length) - 0.5],
+                  gridcolor: "rgba(0,0,0,0)", linecolor: C.rule, zeroline: false, tickfont: { color: C.mist } },
+                yaxis: { title: { text: "Accuracy", font: { size: 12 } }, gridcolor: C.hairline, zeroline: false, tickfont: { color: C.mist } } }) as any}
+              config={plotConfig} useResizeHandler style={{ width: "100%" }}
             />
-          </section>
-
+          </Panel>
 
           {done.length > 1 && (
-            <section className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+            <Panel title="How the settings relate to accuracy"
+              description="Each line is one finished trial. Darker lines scored higher; drag along an axis to filter.">
               <Plot
-                data={
-                  [
-                    {
-                      type: "parcoords",
-                      line: {
-                        color: done.map((t) => t.accuracy as number),
-                        colorscale: "Viridis",
-                        showscale: true,
-                      },
-                      dimensions: [
-                        {
-                          label: "Learning rate",
-                          values: done.map((t) => t.learning_rate),
-                        },
-                        {
-                          label: "Batch size",
-                          values: done.map((t) => t.batch_size),
-                        },
-                        {
-                          label: "Weight decay",
-                          values: done.map((t) => t.weight_decay),
-                        },
-                        {
-                          label: "Accuracy",
-                          values: done.map((t) => t.accuracy as number),
-                        },
-                      ],
-                    },
-                  ] as any
-                }
-                layout={
-                  {
-                    title: { text: "Parallel coordinates" },
-                    height: 420,
-                    autosize: true,
-                    font: chartFont,
-                    paper_bgcolor: "rgba(0,0,0,0)",
-                    margin: { t: 60, r: 40, b: 30, l: 60 },
-                  } as any
-                }
-                useResizeHandler
-                style={{ width: "100%" }}
+                data={[{
+                  type: "parcoords",
+                  line: { color: done.map((t) => t.accuracy as number),
+                    colorscale: [[0, "#e6ebe8"], [0.5, "#7f9c8e"], [1, "#154236"]], showscale: true,
+                    colorbar: { thickness: 10, outlinewidth: 0, tickfont: { color: C.mist } } },
+                  labelfont: { color: C.ink, size: 13 }, tickfont: { color: C.mist, size: 11 },
+                  dimensions: [
+                    { label: "Learning rate", values: done.map((t) => t.learning_rate), tickformat: ".1e" },
+                    { label: "Batch size", values: done.map((t) => t.batch_size) },
+                    { label: "Weight decay", values: done.map((t) => t.weight_decay) },
+                    { label: "Accuracy", values: done.map((t) => t.accuracy as number) },
+                  ],
+                }] as any}
+                layout={baseLayout({ height: 380, margin: { t: 48, r: 48, b: 24, l: 56 } }) as any}
+                config={plotConfig} useResizeHandler style={{ width: "100%" }}
               />
-            </section>
+            </Panel>
           )}
 
-
-          <section className="rounded-2xl border border-slate-200/70 bg-white shadow-sm">
-            <div className="border-b border-slate-100 px-6 py-5">
-              <h3 className="font-semibold text-slate-900">Trials</h3>
-              <p className="mt-1 text-sm text-slate-500">
-                PRUNED means the tuning tool stopped a weak trial early to save
-                time. This is normal.
-              </p>
-            </div>
+          <Panel title="Trials" flush
+            description="Stopped early means the pruner cut a trial that was falling behind, which saves time.">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px] text-left text-sm">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                  <tr>
-                    <th className="px-6 py-3 font-semibold">Trial</th>
-                    <th className="px-3 font-semibold">State</th>
-                    <th className="px-3 font-semibold">Learning rate</th>
-                    <th className="px-3 font-semibold">Batch</th>
-                    <th className="px-3 font-semibold">Weight decay</th>
-                    <th className="px-3 font-semibold">Accuracy</th>
+              <table className="w-full min-w-[640px] text-left text-[14px]">
+                <thead>
+                  <tr className="border-y border-hairline bg-raised text-[13px] text-graphite">
+                    <th className="px-6 py-2.5 font-medium">Trial</th>
+                    <th className="px-3 py-2.5 font-medium">State</th>
+                    <th className="px-3 py-2.5 text-right font-medium">Learning rate</th>
+                    <th className="px-3 py-2.5 text-right font-medium">Batch</th>
+                    <th className="px-3 py-2.5 text-right font-medium">Weight decay</th>
+                    <th className="px-6 py-2.5 text-right font-medium">Accuracy</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-hairline">
                   {trials.map((t) => (
-                    <tr key={t.number} className="transition hover:bg-slate-50/70">
-                      <td className="px-6 py-3 font-medium text-slate-900">
-                        {t.number}
-                      </td>
-                      <td className="px-3">
-                        <StateBadge state={t.state} />
-                      </td>
-                      <td className="px-3 tabular-nums text-slate-700">
-                        {t.learning_rate.toExponential(2)}
-                      </td>
-                      <td className="px-3 tabular-nums text-slate-700">
-                        {t.batch_size}
-                      </td>
-                      <td className="px-3 tabular-nums text-slate-700">
-                        {t.weight_decay.toFixed(3)}
-                      </td>
-                      <td className="px-3 tabular-nums text-slate-700">
-                        {t.accuracy?.toFixed(3) ?? "-"}
-                      </td>
+                    <tr key={t.number} className={bestTrial?.number === t.number ? "bg-spruce-soft/40" : ""}>
+                      <td className="num px-6 py-3 font-semibold text-ink">{t.number}</td>
+                      <td className="px-3"><Status value={t.state} /></td>
+                      <td className="num px-3 text-right text-graphite">{t.learning_rate.toExponential(2)}</td>
+                      <td className="num px-3 text-right text-graphite">{t.batch_size}</td>
+                      <td className="num px-3 text-right text-graphite">{t.weight_decay.toFixed(3)}</td>
+                      <td className="num px-6 text-right font-semibold text-ink">{t.accuracy?.toFixed(3) ?? "–"}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          </section>
+          </Panel>
         </>
       )}
     </div>
