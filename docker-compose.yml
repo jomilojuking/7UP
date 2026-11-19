@@ -18,6 +18,23 @@ x-logging: &logging
     max-size: "10m"
     max-file: "3"
 
+# Shared by the API and the worker so both see the same config.
+x-backend-env: &backend-env
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  MLFLOW_TRACKING_URI: http://mlflow:5000
+  DATABASE_URL: postgresql://${POSTGRES_USER:-hfaio}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-hfaio}
+  # Job/study/A-B records and the job queue live in Redis.
+  REDIS_URL: redis://redis:6379/0
+  HF_TOKEN: ${HF_TOKEN:-}
+  HF_REPO: ${HF_REPO:-}
+  INSIGHT_MODELS: ${INSIGHT_MODELS:-mistralai/Mistral-7B-Instruct-v0.3,meta-llama/Llama-3.1-8B-Instruct}
+  HFAIO_API_KEY: ${HFAIO_API_KEY:-}
+  MAX_ACTIVE_JOBS: ${MAX_ACTIVE_JOBS:-3}
+  RATE_LIMIT_HEAVY: ${RATE_LIMIT_HEAVY:-10/600}
+  RATE_LIMIT_DEFAULT: ${RATE_LIMIT_DEFAULT:-60/60}
+  MAX_TRAIN: ${MAX_TRAIN:-4000}
+  MAX_EVAL: ${MAX_EVAL:-500}
+
 services:
   # ---------------------------------------------------------------- app
   backend:
@@ -25,15 +42,12 @@ services:
       context: ./backend
     image: hfaio-backend:local
     environment:
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      MLFLOW_TRACKING_URI: http://mlflow:5000
-      DATABASE_URL: postgresql://${POSTGRES_USER:-hfaio}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-hfaio}
-      REDIS_URL: redis://redis:6379/0
-      HF_TOKEN: ${HF_TOKEN:-}
-      HF_REPO: ${HF_REPO:-}
-      SUGGEST_MODEL: ${SUGGEST_MODEL:-meta-llama/Llama-3.2-3B-Instruct}
-      MAX_TRAIN: ${MAX_TRAIN:-2000}
-      MAX_EVAL: ${MAX_EVAL:-500}
+      <<: *backend-env
+      # Hand training/tuning/A-B jobs to the worker below instead of running
+      # them inside the API process.
+      USE_WORKER: "1"
+      # nginx (frontend) sits in front of the API, so trust X-Forwarded-For.
+      TRUST_PROXY: "1"
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
     volumes:
@@ -51,6 +65,31 @@ services:
       timeout: 3s
       retries: 5
       start_period: 60s
+    security_opt: ["no-new-privileges:true"]
+    # The API no longer trains models itself (the worker does), so it needs less memory.
+    mem_limit: 2g
+    restart: unless-stopped
+    logging: *logging
+
+  # RQ worker: runs fine-tuning, Optuna studies and A/B tests from the Redis
+  # queue, one at a time, so long jobs never block or time out an HTTP request.
+  # Scale with `docker compose up --scale worker=2` if you have the memory.
+  worker:
+    image: hfaio-backend:local
+    command: ["rq", "worker", "hfaio", "--url", "redis://redis:6379/0"]
+    environment:
+      <<: *backend-env
+    volumes:
+      - backend_data:/data   # same models/, uploads/ and optuna.db as the API
+    depends_on:
+      backend:
+        condition: service_started   # backend builds the shared image
+      redis:
+        condition: service_healthy
+      mlflow:
+        condition: service_started
+    healthcheck:
+      disable: true   # the image's healthcheck probes the API port
     security_opt: ["no-new-privileges:true"]
     mem_limit: 4g
     restart: unless-stopped
